@@ -210,3 +210,33 @@ The player character animations are tied to the gameplay lifecycle:
 - **Test Suite**: 57 tests passing across 12 test suites in 10.2s.
 - **TypeScript**: Strict type check (`tsc --noEmit`) passes with 0 errors.
 - **Production Build**: Vite bundle compiles cleanly in 1.05s.
+
+---
+
+## 7. Camera Sweet Spot, Lighting & Self-Shadowing Diagnostics & Resolution
+
+### Root Cause Diagnosis of Pitch-Black Viewport & Floating Knife
+When running the Stage 1 Hospital scene initially:
+1. **Unlit Room 104**: The starting bedroom lacked local light sources. The only scene light was in the distant corridor ($Z = 12\text{m}$, range $12\text{m}$), producing $0\text{ lx}$ inside Room 104. The ambient light ($0.8 \times 0x182430$) was crushed to pitch-black by ACESFilmic tone mapping.
+2. **Dense Fog**: `FogExp2` density of $0.05$ caused severe exponential light extinction beyond $5\text{m}$.
+3. **Flashlight Self-Occlusion**: Mounting the flashlight spotlight directly inside the player chest at $(0.2, 1.4, 0.2)$ with `castShadow = true` caused the character's own torso and arm meshes to cast shadows over the entire forward beam cone, blacking out the room.
+4. **Camera Top-Down Lerp**: The camera initialized at $(0, 5, 10)$ and lerped slowly towards the player without first-frame snapping, framing the player from an unnatural high downward angle where only high-specularity materials (the chrome knife blade) were faintly visible against the black void.
+
+### Applied Architectural Fixes:
+1. **Room 104 Lighting Environment**:
+   - Added an overhead fluorescent fixture `PointLight(0xc2e2ff, 2.6, 14, 1.2)` at $(0, 3.2, 0)$ with a ceiling fixture mesh.
+   - Added a bedside medical monitor glow `PointLight(0x38ef7d, 1.5, 6)` at $(-1.8, 1.4, -0.8)$.
+   - Lifted ambient light to `AmbientLight(0x42586e, 1.6)` to guarantee visibility of dark materials under ACES tone mapping.
+   - Reduced `FogExp2` density from $0.05$ to $0.018$ with color `#060c14` for atmospheric depth without obscuring rooms.
+2. **Flashlight & Character Rim Light**:
+   - Advanced flashlight position to $(-0.25, 1.35, 0.45)$ in front of the right shoulder and chest, setting `castShadow = false` to eliminate torso self-shadowing.
+   - Flashlight target now aims along the combined yaw + pitch ray ($18\text{m}$ ahead).
+   - Added a character rim light `PointLight(0x7892a8, 1.2, 5, 1.5)` at $(0, 1.5, -0.8)$ to accentuate survivor contours and clothing silhouette against dark walls.
+3. **Over-The-Shoulder Camera Sweet Spot & Snap**:
+   - **Pivot**: `camPivot` at shoulder/eye height $Y = 1.45\text{m}$.
+   - **Offset**: `(-0.45, 0.25, -2.3)` over the right shoulder at intimate combat distance.
+   - **Aim Line-of-Sight**: `lookAtPoint` computed $30\text{m}$ ahead along the Euler aim ray.
+   - **Screen Framing**: Normalized Device Coordinates (NDC) place the player body at $X = -0.14, Y = -0.14$ (lower-left quadrant), leaving the center crosshair ($0.0, 0.0$) completely unobstructed for aiming and interaction.
+   - **First-Frame Snap**: `isCameraInitialized` flag immediately positions and directs the camera on frame 0, eliminating any initial lerp from $(0, 5, 10)$.
+4. **Preloading Weapon Locomotion**:
+   - Added `'sword_idle'` and `'sword_slash'` to `preloadCoreAnimations()` so equipped melee weapons immediately play on model spawn without async delay.
