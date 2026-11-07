@@ -12,25 +12,53 @@ export interface RaycastHit {
 
 export class PhysicsWorld {
   private static isInitialized = false;
-  public world!: RAPIER.World;
-  public rapier!: typeof RAPIER;
+  private static initPromise: Promise<void> | null = null;
+
+  public world: RAPIER.World | null = null;
+  public rapier: typeof RAPIER;
+  private gravityY: number;
   private rigidBodies: Map<number, { body: RAPIER.RigidBody; mesh?: THREE.Object3D }> = new Map();
 
   public static async init(): Promise<void> {
     if (!PhysicsWorld.isInitialized) {
-      await RAPIER.init();
-      PhysicsWorld.isInitialized = true;
-      Logger.info('Rapier 3D physics engine initialized.');
+      if (!PhysicsWorld.initPromise) {
+        PhysicsWorld.initPromise = RAPIER.init().then(() => {
+          PhysicsWorld.isInitialized = true;
+          Logger.info('Rapier 3D physics WASM engine initialized.');
+        });
+      }
+      await PhysicsWorld.initPromise;
     }
   }
 
   constructor(gravityY: number = -9.81) {
     this.rapier = RAPIER;
-    const gravity = new RAPIER.Vector3(0.0, gravityY, 0.0);
-    this.world = new RAPIER.World(gravity);
+    this.gravityY = gravityY;
+
+    // If RAPIER WASM was already initialized, instantiate the world immediately
+    if (PhysicsWorld.isInitialized) {
+      this.createRapierWorld();
+    }
+  }
+
+  public async initWorld(): Promise<void> {
+    if (!this.world) {
+      await PhysicsWorld.init();
+      this.createRapierWorld();
+    }
+  }
+
+  private createRapierWorld(): void {
+    if (!this.world) {
+      const gravity = new RAPIER.Vector3(0.0, this.gravityY, 0.0);
+      this.world = new RAPIER.World(gravity);
+      Logger.info('Rapier 3D simulation world created.');
+    }
   }
 
   public step(fixedDelta: number): void {
+    if (!this.world) return;
+
     this.world.timestep = fixedDelta;
     this.world.step();
 
@@ -50,6 +78,10 @@ export class PhysicsWorld {
     halfExtents: THREE.Vector3,
     mesh?: THREE.Object3D
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
+    if (!this.world) {
+      throw new Error('Cannot create static box: PhysicsWorld has not been initialized. Call await physicsWorld.initWorld() first.');
+    }
+
     const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z);
     const body = this.world.createRigidBody(bodyDesc);
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z);
@@ -65,9 +97,13 @@ export class PhysicsWorld {
     radius: number,
     mesh?: THREE.Object3D
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
+    if (!this.world) {
+      throw new Error('Cannot create dynamic capsule: PhysicsWorld has not been initialized. Call await physicsWorld.initWorld() first.');
+    }
+
     const bodyDesc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(position.x, position.y, position.z)
-      .lockRotations(); // Keep character upright
+      .lockRotations();
     const body = this.world.createRigidBody(bodyDesc);
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius);
     const collider = this.world.createCollider(colliderDesc, body);
@@ -82,6 +118,8 @@ export class PhysicsWorld {
     maxDistance: number = 100,
     solid: boolean = true
   ): RaycastHit | null {
+    if (!this.world) return null;
+
     const ray = new RAPIER.Ray(
       new RAPIER.Vector3(origin.x, origin.y, origin.z),
       new RAPIER.Vector3(direction.x, direction.y, direction.z)
@@ -93,7 +131,7 @@ export class PhysicsWorld {
       const collider = hit.collider;
       return {
         point: new THREE.Vector3(hitPoint.x, hitPoint.y, hitPoint.z),
-        normal: new THREE.Vector3(0, 1, 0), // Default up normal
+        normal: new THREE.Vector3(0, 1, 0),
         distance: hit.timeOfImpact,
         collider,
         rigidBody: collider.parent() || undefined
@@ -104,22 +142,33 @@ export class PhysicsWorld {
 
   public removeRigidBody(body: RAPIER.RigidBody): void {
     this.rigidBodies.delete(body.handle);
-    this.world.removeRigidBody(body);
-  }
-
-  public clearBodies(): void {
-    this.rigidBodies.forEach(({ body }) => {
+    if (this.world) {
       try {
         this.world.removeRigidBody(body);
       } catch (_) {}
-    });
+    }
+  }
+
+  public clearBodies(): void {
+    if (this.world) {
+      this.rigidBodies.forEach(({ body }) => {
+        try {
+          this.world!.removeRigidBody(body);
+        } catch (_) {}
+      });
+    }
     this.rigidBodies.clear();
     Logger.info('Cleared all physics rigid bodies and colliders.');
   }
 
   public dispose(): void {
-    this.rigidBodies.clear();
-    this.world.free();
+    this.clearBodies();
+    if (this.world) {
+      try {
+        this.world.free();
+      } catch (_) {}
+      this.world = null;
+    }
     Logger.info('Rapier 3D physics world disposed.');
   }
 }

@@ -5,7 +5,6 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { EventBus } from '@/core/events/EventBus';
 import { Logger } from '@/core/utils/Logger';
 import { DisposableManager } from '@/core/utils/Disposable';
-import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
 
 export class SceneManager {
   private engine: GameEngine;
@@ -61,7 +60,7 @@ export class SceneManager {
     // 2. Ensure physics engine is initialized for gameplay stages
     if (stageId !== 'main-menu' && stageId !== 'cinematic') {
       useGameUIStore.getState().setLoadingScreen({ progress: 45, statusText: 'Initializing Rapier physics...' });
-      await PhysicsWorld.init();
+      await this.engine.physicsWorld.initWorld();
     }
 
     // 3. Dynamically import target scene (Enables Code Splitting & on-demand loading)
