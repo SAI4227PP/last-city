@@ -45,6 +45,16 @@ export class PlayerController {
   public isMoving: boolean = false;
   public isSprinting: boolean = false;
 
+  // Static scratch vectors & eulers to eliminate per-frame GC allocations
+  private static readonly _scratchMoveDir: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchCamPivot: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchOffset: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchDesiredCam: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchLookAt: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchEuler: THREE.Euler = new THREE.Euler(0, 0, 0, 'YXZ');
+  private static readonly _scratchUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
+  private static readonly _scratchForward: THREE.Vector3 = new THREE.Vector3(0, 0, 1);
+
   constructor(
     scene: THREE.Scene,
     physicsWorld: PhysicsWorld,
@@ -93,7 +103,7 @@ export class PlayerController {
   }
 
   public getPosition(): THREE.Vector3 {
-    return this.group.position.clone();
+    return this.group.position;
   }
 
   public setPosition(pos: THREE.Vector3): void {
@@ -102,9 +112,8 @@ export class PlayerController {
   }
 
   public getForwardVector(): THREE.Vector3 {
-    const forward = new THREE.Vector3(0, 0, 1);
-    forward.applyEuler(new THREE.Euler(0, this.cameraYaw, 0));
-    return forward.normalize();
+    PlayerController._scratchForward.set(0, 0, 1).applyEuler(new THREE.Euler(0, this.cameraYaw, 0));
+    return PlayerController._scratchForward.normalize();
   }
 
   public attachWeaponMesh(weapon: WeaponType): void {
@@ -139,13 +148,13 @@ export class PlayerController {
       ? this.runSpeed
       : this.walkSpeed;
 
-    // World movement vector
-    const moveDir = new THREE.Vector3(moveX, 0, moveZ);
-    moveDir.applyAxisAngle(new THREE.Vector3(0, 1, 0), this.cameraYaw);
+    // World movement vector using pre-allocated vector
+    const moveDir = PlayerController._scratchMoveDir.set(moveX, 0, moveZ);
+    moveDir.applyAxisAngle(PlayerController._scratchUp, this.cameraYaw);
 
     const currentVel = this.rigidBody.linvel();
-    let targetVx = moveDir.x * speed;
-    let targetVz = moveDir.z * speed;
+    const targetVx = moveDir.x * speed;
+    const targetVz = moveDir.z * speed;
     let targetVy = currentVel.y;
 
     // Jump
@@ -166,7 +175,6 @@ export class PlayerController {
       const targetAngle = Math.atan2(targetVx, targetVz);
       this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, targetAngle, dt * this.rotationSpeed);
     } else {
-      // Face aim forward
       this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.cameraYaw, dt * 6.0);
     }
 
@@ -181,7 +189,6 @@ export class PlayerController {
 
       const armAngle = Math.sin(this.strideTimer) * (this.isSprinting ? 0.6 : 0.35);
       this.modelParts.leftArm.rotation.x = -armAngle;
-      // Right arm holds weapon forward with slight bob
       this.modelParts.rightArm.rotation.x = -Math.PI / 4 + Math.sin(this.strideTimer) * 0.1;
 
       // Footstep audio rhythm
@@ -194,7 +201,6 @@ export class PlayerController {
         });
       }
     } else {
-      // Idle pose
       this.strideTimer = 0;
       this.footstepTimer = 0;
       this.modelParts.leftLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftLeg.rotation.x, 0, dt * 10);
@@ -207,23 +213,26 @@ export class PlayerController {
     const targetBodyY = input.crouch ? 0.7 : 1.0;
     this.modelParts.body.position.y = THREE.MathUtils.lerp(this.modelParts.body.position.y, targetBodyY, dt * 12);
 
-    // 5. Update Flashlight Target Direction
-    const lookTarget = this.group.position.clone().add(this.getForwardVector().multiplyScalar(15));
-    lookTarget.y += 1.2;
-    this.flashlightTarget.position.copy(lookTarget);
+    // 5. Update Flashlight Target Direction without allocations
+    const forwardVec = this.getForwardVector();
+    this.flashlightTarget.position.copy(this.group.position).addScaledVector(forwardVec, 15);
+    this.flashlightTarget.position.y += 1.2;
 
     // 6. Update Third-Person Over-the-Shoulder Camera
     const cam = this.cameraManager.camera;
-    const camPivot = this.group.position.clone().add(new THREE.Vector3(0, 1.6, 0));
+    const camPivot = PlayerController._scratchCamPivot.copy(this.group.position).add(new THREE.Vector3(0, 1.6, 0));
 
     // Calculate rotated camera position behind player
-    const offset = this.cameraOffset.clone();
-    offset.applyEuler(new THREE.Euler(this.cameraPitch, this.cameraYaw, 0, 'YXZ'));
-    const desiredCamPos = camPivot.clone().add(offset);
+    const offset = PlayerController._scratchOffset.copy(this.cameraOffset);
+    PlayerController._scratchEuler.set(this.cameraPitch, this.cameraYaw, 0, 'YXZ');
+    offset.applyEuler(PlayerController._scratchEuler);
+
+    const desiredCamPos = PlayerController._scratchDesiredCam.copy(camPivot).add(offset);
 
     // Smooth lerp camera
     cam.position.lerp(desiredCamPos, dt * 16);
-    const lookAtPoint = camPivot.clone().add(new THREE.Vector3(0, Math.sin(this.cameraPitch) * 2.0, 0));
+    const lookAtPoint = PlayerController._scratchLookAt.copy(camPivot);
+    lookAtPoint.y += Math.sin(this.cameraPitch) * 2.0;
     cam.lookAt(lookAtPoint);
 
     this.cameraManager.update(dt);

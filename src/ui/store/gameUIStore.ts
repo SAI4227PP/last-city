@@ -11,6 +11,20 @@ export interface GameUIState {
   showGameOver: boolean;
   gameOverReason: string;
 
+  // Loading Screen
+  loadingScreen: {
+    visible: boolean;
+    title: string;
+    progress: number;
+    statusText: string;
+  };
+
+  // Performance & Diagnostics
+  graphicsProfile: 'auto' | 'low' | 'medium' | 'high';
+  fps: number;
+  showDiagnostics: boolean;
+  diagnosticsText: string;
+
   // HUD elements
   stageBanner: { visible: boolean; stageNum: string; stageTitle: string };
   interactionPrompt: { visible: boolean; text: string; key: string };
@@ -47,6 +61,11 @@ export interface GameUIState {
   setShowInventory: (show: boolean) => void;
   setShowSettings: (show: boolean) => void;
   setShowGameOver: (show: boolean, reason?: string) => void;
+  setLoadingScreen: (loading: { visible?: boolean; title?: string; progress?: number; statusText?: string }) => void;
+  setGraphicsProfile: (profile: 'auto' | 'low' | 'medium' | 'high') => void;
+  setFps: (fps: number) => void;
+  setShowDiagnostics: (show: boolean) => void;
+  setDiagnosticsText: (text: string) => void;
   setStageBanner: (stageNum: string, stageTitle: string, durationMs?: number) => void;
   setInteractionPrompt: (prompt: { visible: boolean; text: string; key: string }) => void;
   setSubtitles: (subtitles: { visible: boolean; speaker: string; text: string }) => void;
@@ -69,6 +88,18 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
   showSettings: false,
   showGameOver: false,
   gameOverReason: 'You succumbed to the infection.',
+
+  loadingScreen: {
+    visible: false,
+    title: 'LOADING STAGE',
+    progress: 0,
+    statusText: 'Preparing district...'
+  },
+
+  graphicsProfile: 'auto',
+  fps: 60,
+  showDiagnostics: false,
+  diagnosticsText: '',
 
   stageBanner: { visible: false, stageNum: '', stageTitle: '' },
   interactionPrompt: { visible: false, text: '', key: 'E' },
@@ -109,6 +140,21 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
   setShowSettings: (showSettings) => set({ showSettings }),
   setShowGameOver: (showGameOver, reason) => set({ showGameOver, gameOverReason: reason || 'You succumbed to the infection.' }),
 
+  setLoadingScreen: ({ visible, title, progress, statusText }) =>
+    set((state) => ({
+      loadingScreen: {
+        visible: visible ?? state.loadingScreen.visible,
+        title: title ?? state.loadingScreen.title,
+        progress: progress ?? state.loadingScreen.progress,
+        statusText: statusText ?? state.loadingScreen.statusText
+      }
+    })),
+
+  setGraphicsProfile: (profile) => set({ graphicsProfile: profile }),
+  setFps: (fps) => set({ fps }),
+  setShowDiagnostics: (showDiagnostics) => set({ showDiagnostics }),
+  setDiagnosticsText: (diagnosticsText) => set({ diagnosticsText }),
+
   setStageBanner: (stageNum, stageTitle, durationMs = 3500) => {
     set({ stageBanner: { visible: true, stageNum, stageTitle } });
     setTimeout(() => {
@@ -135,5 +181,4 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
   setCraftingRecipes: (craftingRecipes) => set({ craftingRecipes })
 }));
 
-// Export alias matching previous usage
 export const useGameUIStore = gameUIStore;

@@ -107,6 +107,16 @@ export class PhysicsWorld {
     this.world.removeRigidBody(body);
   }
 
+  public clearBodies(): void {
+    this.rigidBodies.forEach(({ body }) => {
+      try {
+        this.world.removeRigidBody(body);
+      } catch (_) {}
+    });
+    this.rigidBodies.clear();
+    Logger.info('Cleared all physics rigid bodies and colliders.');
+  }
+
   public dispose(): void {
     this.rigidBodies.clear();
     this.world.free();

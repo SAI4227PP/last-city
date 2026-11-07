@@ -23,7 +23,15 @@ export class ZombieAI {
   private strideTimer: number = 0;
   private eventBus: EventBus;
 
-  // Collision bounding cylinder/sphere
+  // Staggered update counter for multi-tier frequency throttling
+  private updateFrameCounter: number = Math.floor(Math.random() * 10);
+
+  // Reusable scratch vectors to prevent per-frame GC allocations
+  private static readonly _scratchMoveDir: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchLookDir: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchForward: THREE.Vector3 = new THREE.Vector3(0, 0, 1);
+
+  // Collision bounding cylinder
   public readonly hitRadius: number;
   public readonly hitHeight: number;
 
@@ -52,7 +60,7 @@ export class ZombieAI {
   }
 
   public getPosition(): THREE.Vector3 {
-    return this.group.position.clone();
+    return this.group.position;
   }
 
   public alertToNoise(noisePosition: THREE.Vector3, intensity: number): void {
@@ -71,14 +79,14 @@ export class ZombieAI {
     if (this.isDead) return;
 
     this.health -= amount;
-    this.state = 'chase'; // Instantly enraged and turns to attack
+    this.state = 'chase';
 
     if (this.health <= 0) {
       this.die();
     } else {
-      // Stagger reaction
       this.stateTimer = 0.25;
-      this.group.position.addScaledVector(this.getForwardVector(), -0.2);
+      const fwd = this.getForwardVector();
+      this.group.position.addScaledVector(fwd, -0.2);
       this.eventBus.emit('audio:play_sfx', { sound: 'zombie_groan', volume: 0.7 });
     }
   }
@@ -94,20 +102,17 @@ export class ZombieAI {
       position: [this.group.position.x, this.group.position.y, this.group.position.z]
     });
 
-    // Knockdown collapse animation
     this.group.rotation.x = Math.PI / 2;
     this.group.position.y = 0.15;
 
-    // Dim eyes
     this.modelParts.eyeLights.forEach((light) => {
       light.intensity = 0;
     });
   }
 
   public getForwardVector(): THREE.Vector3 {
-    const forward = new THREE.Vector3(0, 0, 1);
-    forward.applyEuler(this.group.rotation);
-    return forward.normalize();
+    ZombieAI._scratchForward.set(0, 0, 1).applyEuler(this.group.rotation);
+    return ZombieAI._scratchForward.normalize();
   }
 
   public update(dt: number, playerPos: THREE.Vector3, onAttackPlayer: (dmg: number) => void): void {
@@ -115,8 +120,23 @@ export class ZombieAI {
 
     const distToPlayer = this.group.position.distanceTo(playerPos);
     this.attackCooldownTimer = Math.max(0, this.attackCooldownTimer - dt);
+    this.updateFrameCounter++;
 
-    // 1. Perception & State Evaluation
+    // Multi-tier distance optimization:
+    // Distant zombies (> 35m) only run AI every 8th frame
+    if (distToPlayer > 35 && this.updateFrameCounter % 8 !== 0) {
+      return;
+    }
+    // Mid-distance zombies (15m - 35m) run AI every 3rd frame
+    if (distToPlayer > 15 && distToPlayer <= 35 && this.updateFrameCounter % 3 !== 0) {
+      // Just step movement forward if chasing
+      if (this.state === 'chase') {
+        this.moveTo(playerPos, this.config.runSpeed, dt);
+      }
+      return;
+    }
+
+    // 1. Perception & State Evaluation (Near or Scheduled frame)
     switch (this.state) {
       case 'idle':
         this.stateTimer -= dt;
@@ -124,7 +144,6 @@ export class ZombieAI {
           this.state = 'chase';
           this.eventBus.emit('audio:play_sfx', { sound: 'zombie_attack', volume: 0.8 });
         } else if (this.stateTimer <= 0) {
-          // Switch to patrol
           this.state = 'patrol';
           this.stateTimer = 5.0;
           this.patrolTarget.set(
@@ -167,7 +186,6 @@ export class ZombieAI {
           this.state = 'attack';
           this.stateTimer = 0.8;
         } else if (distToPlayer > this.config.detectionRadius * 2.2) {
-          // Lost player
           this.state = 'idle';
           this.stateTimer = 4.0;
         } else {
@@ -177,7 +195,6 @@ export class ZombieAI {
 
       case 'attack':
         this.stateTimer -= dt;
-        // Face player
         this.lookAt(playerPos);
 
         if (this.attackCooldownTimer <= 0) {
@@ -195,16 +212,18 @@ export class ZombieAI {
         break;
     }
 
-    // 2. Animate Limbs based on state
-    this.animate(dt);
+    // 2. Animate Limbs (Skip if distant to save CPU cycles)
+    if (distToPlayer <= 30) {
+      this.animate(dt);
+    }
   }
 
   private moveTo(target: THREE.Vector3, speed: number, dt: number): void {
-    const dir = new THREE.Vector3().subVectors(target, this.group.position);
+    const dir = ZombieAI._scratchMoveDir.subVectors(target, this.group.position);
     dir.y = 0;
     const len = dir.length();
     if (len > 0.1) {
-      dir.normalize();
+      dir.divideScalar(len); // In-place normalize
       this.group.position.addScaledVector(dir, speed * dt);
       const targetAngle = Math.atan2(dir.x, dir.z);
       this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, targetAngle, dt * 8.0);
@@ -212,7 +231,7 @@ export class ZombieAI {
   }
 
   private lookAt(target: THREE.Vector3): void {
-    const dir = new THREE.Vector3().subVectors(target, this.group.position);
+    const dir = ZombieAI._scratchLookDir.subVectors(target, this.group.position);
     dir.y = 0;
     if (dir.lengthSq() > 0.01) {
       this.group.rotation.y = Math.atan2(dir.x, dir.z);
@@ -225,17 +244,12 @@ export class ZombieAI {
       const animRate = this.state === 'chase' ? 12 : 7;
       this.strideTimer += dt * animRate;
 
-      // Unsteady limping zombie stride
-      const leftLegAngle = Math.sin(this.strideTimer) * 0.55;
-      const rightLegAngle = -Math.sin(this.strideTimer + 0.3) * 0.45;
-      this.modelParts.leftLeg.rotation.x = leftLegAngle;
-      this.modelParts.rightLeg.rotation.x = rightLegAngle;
+      this.modelParts.leftLeg.rotation.x = Math.sin(this.strideTimer) * 0.55;
+      this.modelParts.rightLeg.rotation.x = -Math.sin(this.strideTimer + 0.3) * 0.45;
 
-      // Aggressive arm swiping
       this.modelParts.leftArm.rotation.x = -Math.PI / 3 + Math.sin(this.strideTimer * 1.2) * 0.3;
       this.modelParts.rightArm.rotation.x = -Math.PI / 3 - Math.sin(this.strideTimer * 1.2) * 0.3;
     } else if (this.state === 'attack') {
-      // Lunging strike
       this.modelParts.leftArm.rotation.x = -Math.PI / 2 + Math.sin(this.stateTimer * 15) * 0.5;
       this.modelParts.rightArm.rotation.x = -Math.PI / 2 + Math.cos(this.stateTimer * 15) * 0.5;
     }

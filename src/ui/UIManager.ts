@@ -2,6 +2,7 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { GameEngine } from '@/core/engine/GameEngine';
 import { AudioManager } from '@/core/audio/AudioManager';
 import { SaveManager } from '@/persistence/SaveManager';
+import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { EventBus } from '@/core/events/EventBus';
 
 export class UIManager {
@@ -23,6 +24,22 @@ export class UIManager {
 
   private renderInitialDOM(): void {
     this.root.innerHTML = `
+      <!-- STAGE LOADING SCREEN -->
+      <div id="loading-screen" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+          <div id="loading-stage-title" class="loading-title">LOADING SECTOR</div>
+          <div class="loading-bar-bg">
+            <div id="loading-bar-fill" class="loading-bar-fill" style="width: 0%;"></div>
+          </div>
+          <div id="loading-status-text" class="loading-status">Streaming assets...</div>
+        </div>
+      </div>
+
+      <!-- PERFORMANCE DIAGNOSTICS HUD BADGE -->
+      <div id="perf-diagnostics" class="perf-diagnostics-badge" style="display: none;">
+        <span id="diagnostics-text">FPS: 60 | FT: 16.6ms | DC: 80</span>
+      </div>
+
       <!-- CINEMATIC OVERLAY -->
       <div id="cinematic-screen" class="cinematic-overlay" style="display: none;">
         <div class="cinematic-letterbox"></div>
@@ -43,7 +60,7 @@ export class UIManager {
             <button id="btn-new-game" class="menu-btn primary">NEW SURVIVAL EXPEDITION</button>
             <button id="btn-continue" class="menu-btn" style="display: none;">CONTINUE LAST CHECKPOINT</button>
             <button id="btn-stage-select" class="menu-btn">STAGE SELECT</button>
-            <button id="btn-open-settings" class="menu-btn">SETTINGS</button>
+            <button id="btn-open-settings" class="menu-btn">SETTINGS & PERFORMANCE</button>
           </div>
         </div>
       </div>
@@ -185,7 +202,7 @@ export class UIManager {
           <div class="menu-nav">
             <button id="btn-resume" class="menu-btn primary">RESUME EXPEDITION</button>
             <button id="btn-manual-save" class="menu-btn">SAVE PROGRESSION</button>
-            <button id="btn-pause-settings" class="menu-btn">SETTINGS</button>
+            <button id="btn-pause-settings" class="menu-btn">SETTINGS & PERFORMANCE</button>
             <button id="btn-quit-menu" class="menu-btn">RETURN TO MAIN MENU</button>
           </div>
         </div>
@@ -193,19 +210,39 @@ export class UIManager {
 
       <!-- SETTINGS MODAL -->
       <div id="settings-modal" class="modal-backdrop interactive" style="display: none;">
-        <div class="inventory-modal" style="max-width: 480px; padding: 24px;">
-          <h3 style="margin-bottom: 20px;">AUDIO & GAMEPLAY SETTINGS</h3>
-          <div style="display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px;">
+        <div class="inventory-modal" style="max-width: 520px; padding: 24px;">
+          <h3 style="margin-bottom: 16px;">GRAPHICS & PERFORMANCE</h3>
+
+          <!-- Graphics Profile Preset -->
+          <div style="margin-bottom: 16px;">
+            <label style="display: block; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 6px;">GRAPHICS PRESET</label>
+            <div class="profile-pill-group">
+              <button class="profile-pill active" data-profile="auto">AUTO (ADAPTIVE)</button>
+              <button class="profile-pill" data-profile="low">LOW (INTEL/MOBILE)</button>
+              <button class="profile-pill" data-profile="medium">MEDIUM</button>
+              <button class="profile-pill" data-profile="high">HIGH (DEDICATED)</button>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 18px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-primary); cursor: pointer;">
+              <input type="checkbox" id="check-diagnostics" />
+              <span>SHOW PERFORMANCE DIAGNOSTICS OVERLAY</span>
+            </label>
+          </div>
+
+          <h3 style="margin-bottom: 16px;">AUDIO VOLUMES</h3>
+          <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
             <div>
-              <label style="display: block; font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">MASTER VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">MASTER VOLUME</label>
               <input type="range" id="slider-master" min="0" max="1" step="0.05" value="0.8" style="width: 100%;" />
             </div>
             <div>
-              <label style="display: block; font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">SFX VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">SFX VOLUME</label>
               <input type="range" id="slider-sfx" min="0" max="1" step="0.05" value="0.8" style="width: 100%;" />
             </div>
             <div>
-              <label style="display: block; font-size: 13px; color: var(--color-text-secondary); margin-bottom: 6px;">MUSIC VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">MUSIC VOLUME</label>
               <input type="range" id="slider-music" min="0" max="1" step="0.05" value="0.6" style="width: 100%;" />
             </div>
           </div>
@@ -409,6 +446,25 @@ export class UIManager {
       document.getElementById('settings-modal')!.style.display = 'none';
     });
 
+    // Graphics Profile Selector
+    document.querySelectorAll('.profile-pill').forEach((pill) => {
+      pill.addEventListener('click', (e) => {
+        const target = e.currentTarget as HTMLElement;
+        const profile = target.getAttribute('data-profile') as any;
+        if (profile) {
+          PerformanceManager.getInstance().setProfile(profile);
+          document.querySelectorAll('.profile-pill').forEach((p) => p.classList.remove('active'));
+          target.classList.add('active');
+        }
+      });
+    });
+
+    // Performance Diagnostics Toggle
+    document.getElementById('check-diagnostics')?.addEventListener('change', (e) => {
+      const checked = (e.target as HTMLInputElement).checked;
+      useGameUIStore.getState().setShowDiagnostics(checked);
+    });
+
     // Audio Sliders
     document.getElementById('slider-master')?.addEventListener('input', (e) => {
       const val = parseFloat((e.target as HTMLInputElement).value);
@@ -458,7 +514,7 @@ export class UIManager {
         centerX = rect.left + rect.width / 2;
         centerY = rect.top + rect.height / 2;
       }
-    }, { passive: true });
+    }, { passive: false });
 
     stickZone.addEventListener('touchmove', (e) => {
       for (let i = 0; i < e.changedTouches.length; i++) {
@@ -478,7 +534,7 @@ export class UIManager {
           break;
         }
       }
-    }, { passive: true });
+    }, { passive: false });
 
     const resetStick = () => {
       touchId = null;
@@ -489,18 +545,18 @@ export class UIManager {
     stickZone.addEventListener('touchend', resetStick, { passive: true });
     stickZone.addEventListener('touchcancel', resetStick, { passive: true });
 
-    // Touch Action Buttons
+    // Touch Action Buttons with touch-action prevention
     const bindTouchAction = (id: string, action: any) => {
       const el = document.getElementById(id);
       if (!el) return;
       el.addEventListener('touchstart', (e) => {
         e.preventDefault();
         this.engine.inputManager.triggerAction(action, true);
-      });
+      }, { passive: false });
       el.addEventListener('touchend', (e) => {
         e.preventDefault();
         this.engine.inputManager.triggerAction(action, false);
-      });
+      }, { passive: false });
     };
 
     bindTouchAction('btn-touch-attack', 'attack');
@@ -518,6 +574,24 @@ export class UIManager {
     document.getElementById('cinematic-screen')!.style.display = isCinematic ? 'flex' : 'none';
     document.getElementById('main-menu-screen')!.style.display = isMainMenu ? 'flex' : 'none';
     document.getElementById('game-hud')!.style.display = isGameplay ? 'flex' : 'none';
+
+    // Loading Screen
+    const loadingScreenEl = document.getElementById('loading-screen');
+    if (loadingScreenEl) {
+      loadingScreenEl.style.display = state.loadingScreen.visible ? 'flex' : 'none';
+      document.getElementById('loading-stage-title')!.innerText = state.loadingScreen.title;
+      document.getElementById('loading-bar-fill')!.style.width = `${state.loadingScreen.progress}%`;
+      document.getElementById('loading-status-text')!.innerText = state.loadingScreen.statusText;
+    }
+
+    // Performance Diagnostics Badge
+    const diagEl = document.getElementById('perf-diagnostics');
+    if (diagEl) {
+      diagEl.style.display = state.showDiagnostics ? 'block' : 'none';
+      if (state.showDiagnostics) {
+        document.getElementById('diagnostics-text')!.innerText = state.diagnosticsText || `FPS: ${state.fps}`;
+      }
+    }
 
     // Pause & Inventory Modals
     document.getElementById('pause-screen')!.style.display = state.showPauseMenu ? 'flex' : 'none';

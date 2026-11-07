@@ -10,13 +10,25 @@ export class GameLoop {
   private animationFrameId: number | null = null;
   private lastTimestamp: number = 0;
 
-  // Fixed timestep for physics simulation (e.g. 60Hz = 1/60 = 0.01666s)
+  // Fixed timestep for physics simulation (60Hz = 1/60 = 0.01666s)
   private readonly fixedDeltaTime: number = 1 / 60;
+  // Maximum substeps allowed in a single frame to prevent spiral of death
+  private readonly maxSubSteps: number = 3;
   private accumulator: number = 0;
 
   private updateCallbacks: Set<UpdateCallback> = new Set();
   private fixedUpdateCallbacks: Set<FixedUpdateCallback> = new Set();
   private renderCallbacks: Set<() => void> = new Set();
+  private onVisibilityChangeBound: () => void;
+
+  constructor() {
+    this.tick = this.tick.bind(this);
+    this.lastTimestamp = typeof performance !== 'undefined' ? performance.now() : 0;
+    this.onVisibilityChangeBound = this.onVisibilityChange.bind(this);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', this.onVisibilityChangeBound);
+    }
+  }
 
   public registerUpdate(cb: UpdateCallback): () => void {
     this.updateCallbacks.add(cb);
@@ -66,8 +78,30 @@ export class GameLoop {
     return this.isPaused;
   }
 
+  public resetTimers(): void {
+    this.lastTimestamp = performance.now();
+    this.accumulator = 0;
+  }
+
+  private onVisibilityChange(): void {
+    if (document.hidden) {
+      // Tab hidden or backgrounded on mobile: reset accumulator
+      this.accumulator = 0;
+    } else {
+      // Resumed: synchronize timestamps to prevent sudden huge delta
+      this.lastTimestamp = performance.now();
+      this.accumulator = 0;
+    }
+  }
+
   private tick(currentTimestamp: number): void {
     if (!this.isRunning) return;
+
+    if (this.lastTimestamp === 0) {
+      this.lastTimestamp = currentTimestamp;
+      this.animationFrameId = requestAnimationFrame(this.tick);
+      return;
+    }
 
     const rawDelta = (currentTimestamp - this.lastTimestamp) / 1000;
     this.lastTimestamp = currentTimestamp;
@@ -79,13 +113,21 @@ export class GameLoop {
     Time.update(clampedDelta, totalTime);
 
     if (!this.isPaused) {
-      // Fixed updates (e.g., Rapier physics)
+      // Fixed updates with hard substep limit
       this.accumulator += clampedDelta;
-      while (this.accumulator >= this.fixedDeltaTime) {
+      let substeps = 0;
+
+      while (this.accumulator >= this.fixedDeltaTime && substeps < this.maxSubSteps) {
         for (const fixedCb of this.fixedUpdateCallbacks) {
           fixedCb(this.fixedDeltaTime);
         }
         this.accumulator -= this.fixedDeltaTime;
+        substeps++;
+      }
+
+      // If accumulator still exceeds threshold after max substeps, discard it to avoid frame lag lock
+      if (this.accumulator > this.fixedDeltaTime) {
+        this.accumulator = 0;
       }
 
       // Variable updates (gameplay, AI, animation)
@@ -100,5 +142,12 @@ export class GameLoop {
     }
 
     this.animationFrameId = requestAnimationFrame(this.tick);
+  }
+
+  public dispose(): void {
+    this.stop();
+    if (typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.onVisibilityChangeBound);
+    }
   }
 }

@@ -3,32 +3,23 @@ import { WeaponType, ZombieVariantType } from '@/shared/types';
 import { ZOMBIE_CONFIGS } from '@/data/zombies';
 
 export class ModelFactory {
-  // Procedural Noise/Grunge Canvas Texture
-  public static createNoiseTexture(colorA: string, colorB: string, size: number = 256): THREE.CanvasTexture {
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d')!;
+  // Reusable materials cache
+  private static materials: Map<string, THREE.Material> = new Map();
+  // Reusable geometries cache
+  private static geometries: Map<string, THREE.BufferGeometry> = new Map();
 
-    ctx.fillStyle = colorA;
-    ctx.fillRect(0, 0, size, size);
-
-    // Splatter noise
-    for (let i = 0; i < 2000; i++) {
-      const x = Math.random() * size;
-      const y = Math.random() * size;
-      const r = Math.random() * 2 + 0.5;
-      ctx.fillStyle = colorB;
-      ctx.globalAlpha = Math.random() * 0.4;
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
-      ctx.fill();
+  private static getMaterial<T extends THREE.Material>(key: string, factory: () => T): T {
+    if (!this.materials.has(key)) {
+      this.materials.set(key, factory());
     }
+    return this.materials.get(key) as T;
+  }
 
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.wrapS = THREE.RepeatWrapping;
-    tex.wrapT = THREE.RepeatWrapping;
-    return tex;
+  private static getGeometry<T extends THREE.BufferGeometry>(key: string, factory: () => T): T {
+    if (!this.geometries.has(key)) {
+      this.geometries.set(key, factory());
+    }
+    return this.geometries.get(key) as T;
   }
 
   // 1. Player Character Mesh Hierarchy
@@ -45,74 +36,89 @@ export class ModelFactory {
     const root = new THREE.Group();
     root.name = 'PlayerModel';
 
-    const jacketMat = new THREE.MeshStandardMaterial({
-      color: 0x2b382d, // Tactical olive drab
+    const jacketMat = this.getMaterial('player_jacket', () => new THREE.MeshStandardMaterial({
+      color: 0x2b382d,
       roughness: 0.8,
       metalness: 0.1
-    });
+    }));
 
-    const pantsMat = new THREE.MeshStandardMaterial({
-      color: 0x1f232b, // Dark charcoal
+    const pantsMat = this.getMaterial('player_pants', () => new THREE.MeshStandardMaterial({
+      color: 0x1f232b,
       roughness: 0.9,
       metalness: 0.05
-    });
+    }));
 
-    const skinMat = new THREE.MeshStandardMaterial({
+    const skinMat = this.getMaterial('player_skin', () => new THREE.MeshStandardMaterial({
       color: 0xd9a584,
       roughness: 0.6
-    });
+    }));
 
-    const bootsMat = new THREE.MeshStandardMaterial({
+    const bootsMat = this.getMaterial('player_boots', () => new THREE.MeshStandardMaterial({
       color: 0x111111,
       roughness: 0.5
-    });
+    }));
+
+    const packMat = this.getMaterial('player_pack', () => new THREE.MeshStandardMaterial({
+      color: 0x1e281f,
+      roughness: 0.9
+    }));
+
+    const torchMat = this.getMaterial('player_torch', () => new THREE.MeshStandardMaterial({
+      color: 0x333333,
+      metalness: 0.8
+    }));
 
     // Body/Torso
     const body = new THREE.Group();
     body.position.y = 1.0;
     root.add(body);
 
-    const torsoGeo = new THREE.BoxGeometry(0.48, 0.65, 0.28);
+    const torsoGeo = this.getGeometry('player_torso_geo', () => new THREE.BoxGeometry(0.48, 0.65, 0.28));
     const torsoMesh = new THREE.Mesh(torsoGeo, jacketMat);
     torsoMesh.castShadow = true;
     torsoMesh.receiveShadow = true;
     torsoMesh.position.y = 0.32;
     body.add(torsoMesh);
 
-    // Tactical Backpack
-    const packGeo = new THREE.BoxGeometry(0.36, 0.45, 0.16);
-    const packMat = new THREE.MeshStandardMaterial({ color: 0x1e281f, roughness: 0.9 });
+    // Backpack
+    const packGeo = this.getGeometry('player_pack_geo', () => new THREE.BoxGeometry(0.36, 0.45, 0.16));
     const packMesh = new THREE.Mesh(packGeo, packMat);
     packMesh.position.set(0, 0.35, -0.2);
     packMesh.castShadow = true;
     body.add(packMesh);
 
     // Head
-    const headGeo = new THREE.BoxGeometry(0.24, 0.28, 0.24);
+    const headGeo = this.getGeometry('player_head_geo', () => new THREE.BoxGeometry(0.24, 0.28, 0.24));
     const head = new THREE.Mesh(headGeo, skinMat);
     head.position.set(0, 0.78, 0);
     head.castShadow = true;
     body.add(head);
 
-    // Flashlight mounted on torso
-    const torchGeo = new THREE.CylinderGeometry(0.03, 0.04, 0.14);
-    const torchMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8 });
+    // Flashlight
+    const torchGeo = this.getGeometry('player_torch_geo', () => {
+      const geo = new THREE.CylinderGeometry(0.03, 0.04, 0.14);
+      geo.rotateX(Math.PI / 2);
+      return geo;
+    });
     const torchMesh = new THREE.Mesh(torchGeo, torchMat);
-    torchMesh.rotation.x = Math.PI / 2;
     torchMesh.position.set(0.18, 0.48, 0.16);
     body.add(torchMesh);
 
-    // Left Arm (pivot at shoulder)
+    // Left Arm
+    const armGeo = this.getGeometry('player_arm_geo', () => {
+      const geo = new THREE.BoxGeometry(0.12, 0.55, 0.14);
+      geo.translate(0, -0.25, 0);
+      return geo;
+    });
+
     const leftArm = new THREE.Group();
     leftArm.position.set(-0.32, 0.58, 0);
-    const armGeo = new THREE.BoxGeometry(0.12, 0.55, 0.14);
-    armGeo.translate(0, -0.25, 0);
     const leftArmMesh = new THREE.Mesh(armGeo, jacketMat);
     leftArmMesh.castShadow = true;
     leftArm.add(leftArmMesh);
     body.add(leftArm);
 
-    // Right Arm (pivot at shoulder)
+    // Right Arm
     const rightArm = new THREE.Group();
     rightArm.position.set(0.32, 0.58, 0);
     const rightArmMesh = new THREE.Mesh(armGeo, jacketMat);
@@ -125,24 +131,27 @@ export class ModelFactory {
     weaponSocket.position.set(0, -0.52, 0.08);
     rightArm.add(weaponSocket);
 
-    // Left Leg
+    // Legs
+    const legGeo = this.getGeometry('player_leg_geo', () => {
+      const geo = new THREE.BoxGeometry(0.16, 0.9, 0.18);
+      geo.translate(0, -0.45, 0);
+      return geo;
+    });
+
+    const bootGeo = this.getGeometry('player_boot_geo', () => new THREE.BoxGeometry(0.17, 0.16, 0.26));
+
     const leftLeg = new THREE.Group();
     leftLeg.position.set(-0.14, 1.0, 0);
-    const legGeo = new THREE.BoxGeometry(0.16, 0.9, 0.18);
-    legGeo.translate(0, -0.45, 0);
     const leftLegMesh = new THREE.Mesh(legGeo, pantsMat);
     leftLegMesh.castShadow = true;
     leftLeg.add(leftLegMesh);
 
-    // Boot
-    const bootGeo = new THREE.BoxGeometry(0.17, 0.16, 0.26);
     const leftBoot = new THREE.Mesh(bootGeo, bootsMat);
     leftBoot.position.set(0, -0.85, 0.04);
     leftBoot.castShadow = true;
     leftLeg.add(leftBoot);
     root.add(leftLeg);
 
-    // Right Leg
     const rightLeg = new THREE.Group();
     rightLeg.position.set(0.14, 1.0, 0);
     const rightLegMesh = new THREE.Mesh(legGeo, pantsMat);
@@ -158,7 +167,7 @@ export class ModelFactory {
     return { root, body, head, leftArm, rightArm, leftLeg, rightLeg, weaponSocket };
   }
 
-  // 2. Zombie Model Hierarchy with 5 Variant Configurations
+  // 2. Zombie Model Hierarchy
   public static createZombieModel(variant: ZombieVariantType): {
     root: THREE.Group;
     body: THREE.Group;
@@ -174,46 +183,48 @@ export class ModelFactory {
     root.name = `Zombie_${variant}`;
     root.scale.set(config.scale[0], config.scale[1], config.scale[2]);
 
-    const fleshMat = new THREE.MeshStandardMaterial({
+    const fleshMat = this.getMaterial(`zombie_flesh_${variant}`, () => new THREE.MeshStandardMaterial({
       color: config.tintColor,
       roughness: 0.85,
       metalness: 0.15
-    });
+    }));
 
-    const clothMat = new THREE.MeshStandardMaterial({
+    const clothMat = this.getMaterial(`zombie_cloth_${variant}`, () => new THREE.MeshStandardMaterial({
       color: variant === 'walker' ? 0x2d3a33 : 0x202428,
       roughness: 0.95
-    });
+    }));
+
+    const eyeMat = this.getMaterial('zombie_eye_mat', () => new THREE.MeshBasicMaterial({ color: 0xff2200 }));
 
     const body = new THREE.Group();
     body.position.y = 1.0;
     root.add(body);
 
-    const torsoGeo = new THREE.BoxGeometry(0.5, 0.65, 0.3);
+    const torsoGeo = this.getGeometry('zombie_torso_geo', () => new THREE.BoxGeometry(0.5, 0.65, 0.3));
     const torsoMesh = new THREE.Mesh(torsoGeo, clothMat);
     torsoMesh.castShadow = true;
     torsoMesh.position.y = 0.32;
     body.add(torsoMesh);
 
-    // Zombie Head
-    const headGeo = new THREE.BoxGeometry(0.26, 0.28, 0.26);
+    // Head
+    const headGeo = this.getGeometry('zombie_head_geo', () => new THREE.BoxGeometry(0.26, 0.28, 0.26));
     const head = new THREE.Mesh(headGeo, fleshMat);
     head.position.set(0, 0.78, 0);
     head.castShadow = true;
     body.add(head);
 
-    // Glowing Menacing Eyes
-    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff2200 });
-    const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.05), eyeMat);
+    // Glowing Eyes
+    const eyeGeo = this.getGeometry('zombie_eye_geo', () => new THREE.BoxGeometry(0.05, 0.04, 0.05));
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
     leftEye.position.set(-0.06, 0.82, 0.14);
     body.add(leftEye);
 
-    const rightEye = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.05), eyeMat);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
     rightEye.position.set(0.06, 0.82, 0.14);
     body.add(rightEye);
 
     const eyeLights: THREE.PointLight[] = [];
-    if (variant === 'boss' || variant === 'runner') {
+    if (variant === 'boss') {
       const eyeLight = new THREE.PointLight(0xff2200, 1.2, 3);
       eyeLight.position.set(0, 0.82, 0.2);
       body.add(eyeLight);
@@ -221,12 +232,14 @@ export class ModelFactory {
     }
 
     // Extended aggressive arms
-    const armGeo = new THREE.BoxGeometry(0.13, 0.58, 0.14);
-    armGeo.translate(0, -0.26, 0);
+    const armGeo = this.getGeometry('zombie_arm_geo', () => {
+      const geo = new THREE.BoxGeometry(0.13, 0.58, 0.14);
+      geo.translate(0, -0.26, 0);
+      return geo;
+    });
 
     const leftArm = new THREE.Group();
     leftArm.position.set(-0.33, 0.58, 0);
-    // Reach arms forward aggressively
     leftArm.rotation.x = -Math.PI / 4;
     const leftArmMesh = new THREE.Mesh(armGeo, fleshMat);
     leftArmMesh.castShadow = true;
@@ -242,8 +255,11 @@ export class ModelFactory {
     body.add(rightArm);
 
     // Legs
-    const legGeo = new THREE.BoxGeometry(0.16, 0.9, 0.18);
-    legGeo.translate(0, -0.45, 0);
+    const legGeo = this.getGeometry('zombie_leg_geo', () => {
+      const geo = new THREE.BoxGeometry(0.16, 0.9, 0.18);
+      geo.translate(0, -0.45, 0);
+      return geo;
+    });
 
     const leftLeg = new THREE.Group();
     leftLeg.position.set(-0.14, 1.0, 0);
@@ -262,14 +278,14 @@ export class ModelFactory {
     return { root, body, head, leftArm, rightArm, leftLeg, rightLeg, eyeLights };
   }
 
-  // 3. Weapon Meshes
+  // 3. Weapons
   public static createWeaponMesh(type: WeaponType): THREE.Group {
     const group = new THREE.Group();
     group.name = `Weapon_${type}`;
 
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1f2326, metalness: 0.9, roughness: 0.25 });
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.8 });
-    const bladeMat = new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 0.95, roughness: 0.1 });
+    const metalMat = this.getMaterial('weapon_metal', () => new THREE.MeshStandardMaterial({ color: 0x1f2326, metalness: 0.9, roughness: 0.25 }));
+    const woodMat = this.getMaterial('weapon_wood', () => new THREE.MeshStandardMaterial({ color: 0x4a2e18, roughness: 0.8 }));
+    const bladeMat = this.getMaterial('weapon_blade', () => new THREE.MeshStandardMaterial({ color: 0xd8d8d8, metalness: 0.95, roughness: 0.1 }));
 
     switch (type) {
       case 'knife': {
@@ -329,28 +345,24 @@ export class ModelFactory {
     return group;
   }
 
-  // 4. Props: Hospital Bed, Medical Cabinet, Police Car, Loot Crate, Barricade
+  // 4. Props
   public static createHospitalBed(): THREE.Group {
     const group = new THREE.Group();
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x88929b, metalness: 0.7, roughness: 0.3 });
-    const matMat = new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.9 });
+    const frameMat = this.getMaterial('bed_frame_mat', () => new THREE.MeshStandardMaterial({ color: 0x88929b, metalness: 0.7, roughness: 0.3 }));
+    const matMat = this.getMaterial('bed_mat_mat', () => new THREE.MeshStandardMaterial({ color: 0xdedede, roughness: 0.9 }));
 
-    // Bed frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 2.2), frameMat);
     frame.position.y = 0.35;
     frame.castShadow = true;
     frame.receiveShadow = true;
 
-    // Mattress
     const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.22, 2.1), matMat);
     mattress.position.y = 0.55;
     mattress.castShadow = true;
 
-    // Pillow
     const pillow = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.12, 0.4), matMat);
     pillow.position.set(0, 0.7, -0.75);
 
-    // IV Stand
     const ivStand = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.8), frameMat);
     ivStand.position.set(0.7, 0.9, -0.8);
     ivStand.castShadow = true;
@@ -361,8 +373,8 @@ export class ModelFactory {
 
   public static createMedicalCabinet(): THREE.Group {
     const group = new THREE.Group();
-    const cabinetMat = new THREE.MeshStandardMaterial({ color: 0xe0e6ed, roughness: 0.4, metalness: 0.5 });
-    const crossMat = new THREE.MeshBasicMaterial({ color: 0xdd2222 });
+    const cabinetMat = this.getMaterial('cabinet_mat', () => new THREE.MeshStandardMaterial({ color: 0xe0e6ed, roughness: 0.4, metalness: 0.5 }));
+    const crossMat = this.getMaterial('cross_mat', () => new THREE.MeshBasicMaterial({ color: 0xdd2222 }));
 
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.25), cabinetMat);
     box.position.y = 0.4;
@@ -379,40 +391,38 @@ export class ModelFactory {
 
   public static createPoliceCar(): THREE.Group {
     const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x0a101d, roughness: 0.3, metalness: 0.7 });
-    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.4 });
-    const glassMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 });
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+    const bodyMat = this.getMaterial('police_body_mat', () => new THREE.MeshStandardMaterial({ color: 0x0a101d, roughness: 0.3, metalness: 0.7 }));
+    const whiteMat = this.getMaterial('police_white_mat', () => new THREE.MeshStandardMaterial({ color: 0xf5f5f5, roughness: 0.4 }));
+    const glassMat = this.getMaterial('police_glass_mat', () => new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1, metalness: 0.9 }));
+    const wheelMat = this.getMaterial('police_wheel_mat', () => new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 }));
 
-    // Chassis
     const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.65, 4.4), bodyMat);
     chassis.position.y = 0.55;
     chassis.castShadow = true;
 
-    // White door panel
     const doorL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 1.6), whiteMat);
     doorL.position.set(-1.06, 0.58, 0);
     const doorR = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.4, 1.6), whiteMat);
     doorR.position.set(1.06, 0.58, 0);
 
-    // Cabin
     const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 2.2), glassMat);
     cabin.position.set(0, 1.05, -0.2);
     cabin.castShadow = true;
 
-    // Siren Bar (Blue and Red)
     const sirenRed = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.12), new THREE.MeshBasicMaterial({ color: 0xff0000 }));
     sirenRed.position.set(-0.25, 1.36, -0.2);
     const sirenBlue = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.12), new THREE.MeshBasicMaterial({ color: 0x0044ff }));
     sirenBlue.position.set(0.25, 1.36, -0.2);
 
-    // Flashing siren light
     const sirenLight = new THREE.PointLight(0x0066ff, 1.5, 12);
     sirenLight.position.set(0, 1.5, -0.2);
 
-    // Wheels
-    const wheelGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 12);
-    wheelGeo.rotateZ(Math.PI / 2);
+    const wheelGeo = this.getGeometry('police_wheel_geo', () => {
+      const geo = new THREE.CylinderGeometry(0.38, 0.38, 0.28, 10);
+      geo.rotateZ(Math.PI / 2);
+      return geo;
+    });
+
     const wFL = new THREE.Mesh(wheelGeo, wheelMat);
     wFL.position.set(-1.05, 0.38, 1.3);
     const wFR = new THREE.Mesh(wheelGeo, wheelMat);
@@ -428,19 +438,18 @@ export class ModelFactory {
 
   public static createConcreteBarricade(): THREE.Group {
     const group = new THREE.Group();
-    const concreteMat = new THREE.MeshStandardMaterial({
+    const concreteMat = this.getMaterial('barricade_concrete', () => new THREE.MeshStandardMaterial({
       color: 0x6e7175,
       roughness: 0.95,
       metalness: 0.05
-    });
+    }));
 
     const barrier = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.0, 0.6), concreteMat);
     barrier.position.y = 0.5;
     barrier.castShadow = true;
     barrier.receiveShadow = true;
 
-    // Yellow hazard stripes
-    const stripeMat = new THREE.MeshBasicMaterial({ color: 0xd69e2e });
+    const stripeMat = this.getMaterial('hazard_stripe', () => new THREE.MeshBasicMaterial({ color: 0xd69e2e }));
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.2, 0.62), stripeMat);
     stripe.position.y = 0.5;
 
@@ -450,8 +459,8 @@ export class ModelFactory {
 
   public static createLootCrate(): THREE.Group {
     const group = new THREE.Group();
-    const woodMat = new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 0.85 });
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+    const woodMat = this.getMaterial('crate_wood', () => new THREE.MeshStandardMaterial({ color: 0x5a4128, roughness: 0.85 }));
+    const metalMat = this.getMaterial('crate_metal', () => new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 }));
 
     const box = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.6, 0.7), woodMat);
     box.position.y = 0.3;

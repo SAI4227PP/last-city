@@ -22,6 +22,21 @@ export default defineConfig({
   build: {
     target: 'esnext',
     assetsInlineLimit: 4096,
-    chunkSizeWarningLimit: 1500
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('@dimforge/rapier3d-compat')) {
+            return 'vendor-physics';
+          }
+          if (id.includes('three')) {
+            return 'vendor-three';
+          }
+          if (id.includes('zustand') || id.includes('idb') || id.includes('howler') || id.includes('zod')) {
+            return 'vendor-ui-core';
+          }
+        }
+      }
+    }
   }
 });

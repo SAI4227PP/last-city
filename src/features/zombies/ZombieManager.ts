@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ZombieAI } from './ai/ZombieAI';
 import { ZombieVariantType } from '@/shared/types';
 import { SurvivalSystem } from '@/features/survival/SurvivalSystem';
+import { PerformanceManager } from '@/core/performance/PerformanceManager';
 
 export interface ZombieRayHit {
   zombie: ZombieAI;
@@ -16,12 +17,25 @@ export class ZombieManager {
   private survivalSystem: SurvivalSystem;
   private nextId: number = 1;
 
+  // Scratch vectors to eliminate GC in hit detection
+  private static readonly _scratchToZombie: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchRayPoint: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchZombiePos: THREE.Vector3 = new THREE.Vector3();
+
   constructor(scene: THREE.Scene, survivalSystem: SurvivalSystem) {
     this.scene = scene;
     this.survivalSystem = survivalSystem;
   }
 
-  public spawnZombie(variant: ZombieVariantType, position: THREE.Vector3): ZombieAI {
+  public spawnZombie(variant: ZombieVariantType, position: THREE.Vector3): ZombieAI | null {
+    const maxAllowed = PerformanceManager.getInstance().getConfig().maxActiveZombies;
+    const activeCount = this.zombies.filter((z) => !z.isDead).length;
+
+    // Respect graphics profile zombie population cap
+    if (activeCount >= maxAllowed) {
+      return null;
+    }
+
     const id = `zombie_${this.nextId++}`;
     const zombie = new ZombieAI(id, variant, position, this.scene);
     this.zombies.push(zombie);
@@ -46,18 +60,18 @@ export class ZombieManager {
       if (zombie.isDead) continue;
 
       const zPos = zombie.getPosition();
-      // Test cylinder/sphere intersection
-      const toZombie = zPos.clone().add(new THREE.Vector3(0, 0.9, 0)).sub(rayOrigin);
-      const proj = toZombie.dot(rayDir);
+      ZombieManager._scratchZombiePos.copy(zPos).add(new THREE.Vector3(0, 0.9, 0));
+      ZombieManager._scratchToZombie.subVectors(ZombieManager._scratchZombiePos, rayOrigin);
+
+      const proj = ZombieManager._scratchToZombie.dot(rayDir);
 
       if (proj > 0 && proj < closestDist) {
-        const closestPointOnRay = rayOrigin.clone().add(rayDir.clone().multiplyScalar(proj));
-        const lateralDist = closestPointOnRay.distanceTo(zPos.clone().add(new THREE.Vector3(0, 0.9, 0)));
+        ZombieManager._scratchRayPoint.copy(rayOrigin).addScaledVector(rayDir, proj);
+        const lateralDist = ZombieManager._scratchRayPoint.distanceTo(ZombieManager._scratchZombiePos);
 
         if (lateralDist <= zombie.hitRadius + 0.3) {
-          const hitPoint = closestPointOnRay;
+          const hitPoint = ZombieManager._scratchRayPoint.clone();
           const hitHeightOnZombie = hitPoint.y - zPos.y;
-          // Headshot if hit in top 25% of height
           const isHeadshot = hitHeightOnZombie >= zombie.hitHeight * 0.72;
 
           closestDist = proj;
@@ -86,13 +100,13 @@ export class ZombieManager {
       if (zombie.isDead) continue;
 
       const zPos = zombie.getPosition();
-      const toZombie = zPos.clone().sub(sweepOrigin);
-      toZombie.y = 0;
-      const dist = toZombie.length();
+      ZombieManager._scratchToZombie.subVectors(zPos, sweepOrigin);
+      ZombieManager._scratchToZombie.y = 0;
+      const dist = ZombieManager._scratchToZombie.length();
 
       if (dist <= range + zombie.hitRadius) {
-        toZombie.normalize();
-        const angle = forwardDir.angleTo(toZombie);
+        ZombieManager._scratchToZombie.divideScalar(dist);
+        const angle = forwardDir.angleTo(ZombieManager._scratchToZombie);
 
         if (angle <= angleSpreadRad) {
           if (!closest || dist < closest.dist) {
@@ -114,9 +128,8 @@ export class ZombieManager {
       const zombie = this.zombies[i];
       const dist = zombie.getPosition().distanceTo(playerPos);
 
-      // Distance-based optimization:
-      // If very far (> 60m), skip processing to save frame time
-      if (dist > 60) continue;
+      // Distant culling optimization: Skip processing if beyond 55m
+      if (dist > 55) continue;
 
       zombie.update(dt, playerPos, (dmg) => {
         this.survivalSystem.damage(dmg, zombie.config.name);

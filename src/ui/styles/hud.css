@@ -289,14 +289,15 @@
 
 .touch-stick-zone {
   position: absolute;
-  bottom: 30px;
-  left: 30px;
+  bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  left: calc(30px + env(safe-area-inset-left, 0px));
   width: 130px;
   height: 130px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
   border: 2px solid rgba(255, 255, 255, 0.2);
   pointer-events: auto;
+  touch-action: none;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -313,12 +314,13 @@
 
 .touch-actions-zone {
   position: absolute;
-  bottom: 30px;
-  right: 30px;
+  bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  right: calc(30px + env(safe-area-inset-right, 0px));
   display: grid;
   grid-template-columns: repeat(2, 60px);
   gap: 12px;
   pointer-events: auto;
+  touch-action: none;
 }
 
 .touch-btn {
