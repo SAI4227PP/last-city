@@ -15,19 +15,33 @@ export interface AppSettings {
 
 export class SaveManager {
   private static instance: SaveManager | null = null;
-  private dbPromise: Promise<IDBPDatabase>;
+  private dbPromise: Promise<IDBPDatabase> | null = null;
+  private isIndexedDBAvailable: boolean;
+  private memorySaves: Map<string, any> = new Map();
+  private memorySettings: Map<string, any> = new Map();
 
   private constructor() {
-    this.dbPromise = openDB(DB_NAME, DB_VERSION, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains('saves')) {
-          db.createObjectStore('saves');
-        }
-        if (!db.objectStoreNames.contains('settings')) {
-          db.createObjectStore('settings');
-        }
+    this.isIndexedDBAvailable = typeof indexedDB !== 'undefined';
+
+    if (this.isIndexedDBAvailable) {
+      try {
+        this.dbPromise = openDB(DB_NAME, DB_VERSION, {
+          upgrade(db) {
+            if (!db.objectStoreNames.contains('saves')) {
+              db.createObjectStore('saves');
+            }
+            if (!db.objectStoreNames.contains('settings')) {
+              db.createObjectStore('settings');
+            }
+          }
+        });
+      } catch (err) {
+        Logger.warn('IndexedDB initialization failed, falling back to in-memory store:', err);
+        this.isIndexedDBAvailable = false;
       }
-    });
+    } else {
+      Logger.info('IndexedDB not supported in current environment; using in-memory store.');
+    }
   }
 
   public static getInstance(): SaveManager {
@@ -38,6 +52,12 @@ export class SaveManager {
   }
 
   public async saveGame(data: PlayerSaveData): Promise<boolean> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      this.memorySaves.set(SAVE_SLOT_KEY, JSON.parse(JSON.stringify(data)));
+      Logger.info(`Game state saved in-memory for stage "${data.stage}".`);
+      return true;
+    }
+
     try {
       const db = await this.dbPromise;
       await db.put('saves', data, SAVE_SLOT_KEY);
@@ -50,6 +70,11 @@ export class SaveManager {
   }
 
   public async loadGame(): Promise<PlayerSaveData | null> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      const mem = this.memorySaves.get(SAVE_SLOT_KEY);
+      return mem ? JSON.parse(JSON.stringify(mem)) : null;
+    }
+
     try {
       const db = await this.dbPromise;
       const data = await db.get('saves', SAVE_SLOT_KEY);
@@ -65,6 +90,10 @@ export class SaveManager {
   }
 
   public async hasSave(): Promise<boolean> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      return this.memorySaves.has(SAVE_SLOT_KEY);
+    }
+
     try {
       const db = await this.dbPromise;
       const data = await db.get('saves', SAVE_SLOT_KEY);
@@ -75,6 +104,12 @@ export class SaveManager {
   }
 
   public async deleteSave(): Promise<void> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      this.memorySaves.delete(SAVE_SLOT_KEY);
+      Logger.info('In-memory save deleted.');
+      return;
+    }
+
     try {
       const db = await this.dbPromise;
       await db.delete('saves', SAVE_SLOT_KEY);
@@ -85,6 +120,11 @@ export class SaveManager {
   }
 
   public async saveSettings(settings: AppSettings): Promise<void> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      this.memorySettings.set(SETTINGS_KEY, JSON.parse(JSON.stringify(settings)));
+      return;
+    }
+
     try {
       const db = await this.dbPromise;
       await db.put('settings', settings, SETTINGS_KEY);
@@ -94,11 +134,17 @@ export class SaveManager {
   }
 
   public async loadSettings(): Promise<AppSettings | null> {
+    if (!this.isIndexedDBAvailable || !this.dbPromise) {
+      const mem = this.memorySettings.get(SETTINGS_KEY);
+      return mem ? JSON.parse(JSON.stringify(mem)) : null;
+    }
+
     try {
       const db = await this.dbPromise;
       const settings = await db.get('settings', SETTINGS_KEY);
       return settings || null;
-    } catch {
+    } catch (err) {
+      Logger.warn('Failed to load user settings:', err);
       return null;
     }
   }

@@ -97,7 +97,11 @@ export interface AudioSettings {
 }
 
 export interface GraphicsSettings {
-  quality: 'low' | 'medium' | 'high';
-  shadows: boolean;
-  pixelRatio: number;
+  quality: 'auto' | 'low' | 'medium' | 'high';
+  shadows: 'off' | 'low' | 'high';
+  renderScale: number;
+  particleQuality: 'low' | 'medium' | 'high';
+  environmentalDetail: 'low' | 'high';
+  showFps: boolean;
+  showDiagnostics: boolean;
 }

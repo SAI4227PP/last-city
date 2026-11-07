@@ -25,6 +25,11 @@ export class GameEngine {
     this.sceneManager = new SceneManager(this);
     this.gameLoop = new GameLoop();
 
+    // Hook performance manager settings to game loop substeps
+    PerformanceManager.getInstance().addConfigListener((config) => {
+      this.gameLoop.setMaxSubSteps(config.maxSubSteps);
+    });
+
     // Hook game loop updates
     this.gameLoop.registerUpdate((dt, totalTime) => {
       // 1. Record frame time metrics into PerformanceManager

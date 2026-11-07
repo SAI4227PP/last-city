@@ -10,16 +10,27 @@ export class ModelFactory {
 
   private static getMaterial<T extends THREE.Material>(key: string, factory: () => T): T {
     if (!this.materials.has(key)) {
-      this.materials.set(key, factory());
+      const mat = factory();
+      mat.userData.isShared = true;
+      this.materials.set(key, mat);
     }
     return this.materials.get(key) as T;
   }
 
   private static getGeometry<T extends THREE.BufferGeometry>(key: string, factory: () => T): T {
     if (!this.geometries.has(key)) {
-      this.geometries.set(key, factory());
+      const geo = factory();
+      geo.userData.isShared = true;
+      this.geometries.set(key, geo);
     }
     return this.geometries.get(key) as T;
+  }
+
+  public static clearCache(): void {
+    this.materials.forEach((mat) => mat.dispose());
+    this.materials.clear();
+    this.geometries.forEach((geo) => geo.dispose());
+    this.geometries.clear();
   }
 
   // 1. Player Character Mesh Hierarchy

@@ -6,6 +6,7 @@ export class Renderer {
   public readonly webglRenderer: THREE.WebGLRenderer;
   private container: HTMLElement;
   private currentConfig: PerformanceConfig;
+  private configUnsubscribe?: () => void;
 
   // Realtime rendering metrics
   public drawCalls: number = 0;
@@ -35,9 +36,9 @@ export class Renderer {
     this.container.appendChild(this.webglRenderer.domElement);
 
     // Listen to adaptive performance changes
-    perfManager.onConfigChanged = (newConfig) => {
+    this.configUnsubscribe = perfManager.addConfigListener((newConfig) => {
       this.onPerformanceConfigChanged(newConfig);
-    };
+    });
 
     window.addEventListener('resize', this.onResize.bind(this));
     Logger.info('WebGL Renderer initialized with adaptive performance profiling.');
@@ -85,6 +86,9 @@ export class Renderer {
   }
 
   public dispose(): void {
+    if (this.configUnsubscribe) {
+      this.configUnsubscribe();
+    }
     window.removeEventListener('resize', this.onResize.bind(this));
     this.webglRenderer.dispose();
     if (this.webglRenderer.domElement.parentElement) {

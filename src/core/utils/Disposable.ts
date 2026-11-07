@@ -13,15 +13,19 @@ export class DisposableManager implements IDisposable {
 
   public static disposeObject3D(root: THREE.Object3D): void {
     root.traverse((child) => {
-      if ((child as THREE.Mesh).isMesh) {
+      if ((child as THREE.Mesh).isMesh || (child as THREE.InstancedMesh).isInstancedMesh) {
         const mesh = child as THREE.Mesh;
-        if (mesh.geometry) {
+        if (mesh.geometry && !mesh.geometry.userData?.isShared) {
           mesh.geometry.dispose();
         }
         if (mesh.material) {
           if (Array.isArray(mesh.material)) {
-            mesh.material.forEach((mat) => mat.dispose());
-          } else {
+            mesh.material.forEach((mat) => {
+              if (!mat.userData?.isShared) {
+                mat.dispose();
+              }
+            });
+          } else if (!mesh.material.userData?.isShared) {
             mesh.material.dispose();
           }
         }

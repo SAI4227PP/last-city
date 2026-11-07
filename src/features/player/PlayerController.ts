@@ -38,6 +38,7 @@ export class PlayerController {
   private cameraYaw: number = 0;
   private cameraPitch: number = 0.15;
   private readonly cameraOffset: THREE.Vector3 = new THREE.Vector3(0.5, 1.8, -3.2);
+  private weaponSwitchUnsub?: () => void;
 
   // Animation cycle states
   private strideTimer: number = 0;
@@ -96,7 +97,7 @@ export class PlayerController {
     this.collider = collider;
 
     // Listen for weapon switch events to update 3D attachment in hand
-    this.eventBus.on('weapon:switch', ({ weapon }) => {
+    this.weaponSwitchUnsub = this.eventBus.on('weapon:switch', ({ weapon }) => {
       this.attachWeaponMesh(weapon);
     });
     this.attachWeaponMesh('knife');
@@ -239,9 +240,15 @@ export class PlayerController {
   }
 
   public dispose(): void {
+    if (this.weaponSwitchUnsub) {
+      this.weaponSwitchUnsub();
+    }
     this.physicsWorld.removeRigidBody(this.rigidBody);
     if (this.group.parent) {
       this.group.parent.remove(this.group);
+    }
+    if (this.flashlightTarget.parent) {
+      this.flashlightTarget.parent.remove(this.flashlightTarget);
     }
   }
 }

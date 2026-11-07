@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { PerformanceManager } from '@/core/performance/PerformanceManager';
 
 interface Particle {
   position: THREE.Vector3;
@@ -44,8 +45,10 @@ export class ParticleSystem {
   }
 
   public spawnBloodSplatter(origin: THREE.Vector3, count: number = 20): void {
+    const scale = PerformanceManager.getInstance().getConfig().particleScale;
+    const finalCount = Math.max(2, Math.round(count * scale));
     const bloodColor = new THREE.Color(0x8a0f0f);
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < finalCount; i++) {
       if (this.particles.length >= this.maxParticles) break;
 
       const vel = new THREE.Vector3(
@@ -66,8 +69,10 @@ export class ParticleSystem {
   }
 
   public spawnFireSparks(origin: THREE.Vector3, count: number = 5): void {
+    const scale = PerformanceManager.getInstance().getConfig().particleScale;
+    const finalCount = Math.max(1, Math.round(count * scale));
     const sparkColor = new THREE.Color(Math.random() > 0.5 ? 0xff6600 : 0xffcc00);
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < finalCount; i++) {
       if (this.particles.length >= this.maxParticles) break;
 
       const vel = new THREE.Vector3(
@@ -135,6 +140,9 @@ export class ParticleSystem {
   }
 
   public dispose(): void {
+    if (this.points.parent) {
+      this.points.parent.remove(this.points);
+    }
     this.geometry.dispose();
     if (Array.isArray(this.points.material)) {
       this.points.material.forEach((m) => m.dispose());

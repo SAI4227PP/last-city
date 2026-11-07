@@ -12,6 +12,7 @@ import { ParticleSystem } from '@/core/engine/ParticleSystem';
 import { ModelFactory } from '@/core/assets/ModelFactory';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { AudioManager } from '@/core/audio/AudioManager';
+import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { EventBus } from '@/core/events/EventBus';
 
 interface Interactable {
@@ -52,7 +53,7 @@ export class CityEscapeScene extends BaseScene {
     this.inventoryManager = new InventoryManager();
     this.particleSystem = new ParticleSystem(this.scene, 1200);
     this.combatManager = new CombatManager(this.scene, this.engine.cameraManager, this.particleSystem);
-    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem);
+    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem, this.engine.physicsWorld);
     this.combatManager.setZombieManager(this.zombieManager);
     this.missionManager = new MissionManager();
 
@@ -108,14 +109,50 @@ export class CityEscapeScene extends BaseScene {
     this.scene.add(road);
     this.engine.physicsWorld.createStaticBox(new THREE.Vector3(0, -0.5, 40), new THREE.Vector3(12, 0.5, 50));
 
-    // Road Divider Yellow Stripes
+    // Road Divider Yellow Stripes (Optimized with InstancedMesh for 1 single draw call)
     const stripeMat = new THREE.MeshBasicMaterial({ color: 0xd69e2e });
+    const stripeGeo = new THREE.PlaneGeometry(0.3, 3);
+    stripeGeo.rotateX(-Math.PI / 2);
+    const stripeZPositions: number[] = [];
     for (let z = 0; z < 80; z += 6) {
-      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(0.3, 3), stripeMat);
-      stripe.rotation.x = -Math.PI / 2;
-      stripe.position.set(0, 0.02, z);
-      this.scene.add(stripe);
+      stripeZPositions.push(z);
     }
+    const stripeInstanced = new THREE.InstancedMesh(stripeGeo, stripeMat, stripeZPositions.length);
+    const dummy = new THREE.Object3D();
+    stripeZPositions.forEach((zPos, idx) => {
+      dummy.position.set(0, 0.02, zPos);
+      dummy.rotation.set(0, 0, 0);
+      dummy.updateMatrix();
+      stripeInstanced.setMatrixAt(idx, dummy.matrix);
+    });
+    stripeInstanced.instanceMatrix.needsUpdate = true;
+    this.scene.add(stripeInstanced);
+
+    // Instanced Concrete Barricades & Roadblocks (1 single draw call for all barriers)
+    const barrierGeo = new THREE.BoxGeometry(2.4, 0.9, 0.5);
+    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x4a5568, roughness: 0.85 });
+    const barrierPositions = [
+      new THREE.Vector3(-6, 0.45, 12),
+      new THREE.Vector3(-3.5, 0.45, 12),
+      new THREE.Vector3(5, 0.45, 22),
+      new THREE.Vector3(7.5, 0.45, 22),
+      new THREE.Vector3(-4, 0.45, 38),
+      new THREE.Vector3(3, 0.45, 50),
+      new THREE.Vector3(5.5, 0.45, 50),
+      new THREE.Vector3(-7, 0.45, 62)
+    ];
+    const barrierInstanced = new THREE.InstancedMesh(barrierGeo, barrierMat, barrierPositions.length);
+    barrierPositions.forEach((pos, i) => {
+      dummy.position.copy(pos);
+      dummy.rotation.set(0, i % 2 === 0 ? 0.15 : -0.2, 0);
+      dummy.updateMatrix();
+      barrierInstanced.setMatrixAt(i, dummy.matrix);
+      this.engine.physicsWorld.createStaticBox(pos, new THREE.Vector3(1.2, 0.45, 0.25));
+    });
+    barrierInstanced.instanceMatrix.needsUpdate = true;
+    barrierInstanced.castShadow = true;
+    barrierInstanced.receiveShadow = true;
+    this.scene.add(barrierInstanced);
 
     // Sidewalks
     const sidewalkL = new THREE.Mesh(new THREE.BoxGeometry(4, 0.3, 100), sidewalkMat);
@@ -141,12 +178,13 @@ export class CityEscapeScene extends BaseScene {
       this.engine.physicsWorld.createStaticBox(new THREE.Vector3(22, 14, z), new THREE.Vector3(6, 14, 8));
     }
 
-    // Moonlight
+    // Moonlight with adaptive shadow resolution
+    const perfConfig = PerformanceManager.getInstance().getConfig();
     const moon = new THREE.DirectionalLight(0x527291, 1.6);
     moon.position.set(25, 45, 10);
-    moon.castShadow = true;
-    moon.shadow.mapSize.width = 2048;
-    moon.shadow.mapSize.height = 2048;
+    moon.castShadow = perfConfig.shadows;
+    moon.shadow.mapSize.width = perfConfig.shadowMapSize;
+    moon.shadow.mapSize.height = perfConfig.shadowMapSize;
     this.scene.add(moon);
 
     const ambient = new THREE.AmbientLight(0x0c141d, 1.1);

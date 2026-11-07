@@ -12,10 +12,11 @@ describe('PerformanceManager', () => {
   it('correctly configures profiles: Low, Medium, High', () => {
     perf.setProfile('low');
     const lowConfig = perf.getConfig();
-    expect(lowConfig.renderScale).toBe(0.70);
+    expect(lowConfig.renderScale).toBe(0.75);
     expect(lowConfig.maxDpr).toBe(1.0);
     expect(lowConfig.shadows).toBe(false);
     expect(lowConfig.maxActiveZombies).toBe(8);
+    expect(lowConfig.maxSubSteps).toBe(2);
 
     perf.setProfile('medium');
     const medConfig = perf.getConfig();
@@ -23,6 +24,7 @@ describe('PerformanceManager', () => {
     expect(medConfig.maxDpr).toBe(1.25);
     expect(medConfig.shadows).toBe(true);
     expect(medConfig.maxActiveZombies).toBe(14);
+    expect(medConfig.maxSubSteps).toBe(3);
 
     perf.setProfile('high');
     const highConfig = perf.getConfig();
@@ -30,6 +32,7 @@ describe('PerformanceManager', () => {
     expect(highConfig.maxDpr).toBe(1.5);
     expect(highConfig.shadows).toBe(true);
     expect(highConfig.maxActiveZombies).toBe(24);
+    expect(highConfig.maxSubSteps).toBe(3);
   });
 
   it('records frame times and computes accurate average FPS', () => {
@@ -57,6 +60,22 @@ describe('PerformanceManager', () => {
 
     expect(perf.currentResolvedProfile).toBe('low');
     expect(perf.getConfig().shadows).toBe(false);
-    expect(perf.getConfig().renderScale).toBe(0.70);
+    expect(perf.getConfig().renderScale).toBe(0.75);
+  });
+
+  it('allows manual overrides for shadows, render scale, and particles', () => {
+    perf.setProfile('auto');
+    perf.setShadowQuality('high', false);
+    expect(perf.getConfig().shadowQuality).toBe('high');
+    expect(perf.getConfig().shadowMapSize).toBe(2048);
+
+    perf.setRenderScale(0.9, false);
+    expect(perf.getConfig().renderScale).toBe(0.9);
+
+    perf.setParticleQuality('low', false);
+    expect(perf.getConfig().particleScale).toBe(0.35);
+
+    perf.setEnvironmentalDetail('low', false);
+    expect(perf.getConfig().environmentalDetail).toBe('low');
   });
 });

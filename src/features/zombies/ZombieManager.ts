@@ -3,6 +3,7 @@ import { ZombieAI } from './ai/ZombieAI';
 import { ZombieVariantType } from '@/shared/types';
 import { SurvivalSystem } from '@/features/survival/SurvivalSystem';
 import { PerformanceManager } from '@/core/performance/PerformanceManager';
+import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
 
 export interface ZombieRayHit {
   zombie: ZombieAI;
@@ -13,18 +14,26 @@ export interface ZombieRayHit {
 
 export class ZombieManager {
   private zombies: ZombieAI[] = [];
+  private zombiePool: Map<ZombieVariantType, ZombieAI[]> = new Map();
   private scene: THREE.Scene;
   private survivalSystem: SurvivalSystem;
+  private physicsWorld: PhysicsWorld | null = null;
   private nextId: number = 1;
 
   // Scratch vectors to eliminate GC in hit detection
   private static readonly _scratchToZombie: THREE.Vector3 = new THREE.Vector3();
   private static readonly _scratchRayPoint: THREE.Vector3 = new THREE.Vector3();
   private static readonly _scratchZombiePos: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchRayDir: THREE.Vector3 = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene, survivalSystem: SurvivalSystem) {
+  constructor(scene: THREE.Scene, survivalSystem: SurvivalSystem, physicsWorld?: PhysicsWorld) {
     this.scene = scene;
     this.survivalSystem = survivalSystem;
+    this.physicsWorld = physicsWorld || null;
+  }
+
+  public setPhysicsWorld(world: PhysicsWorld): void {
+    this.physicsWorld = world;
   }
 
   public spawnZombie(variant: ZombieVariantType, position: THREE.Vector3): ZombieAI | null {
@@ -36,6 +45,16 @@ export class ZombieManager {
       return null;
     }
 
+    // 1. Check object pool for recyclable zombie
+    const pool = this.zombiePool.get(variant);
+    if (pool && pool.length > 0) {
+      const recycledZombie = pool.pop()!;
+      recycledZombie.reset(position);
+      this.zombies.push(recycledZombie);
+      return recycledZombie;
+    }
+
+    // 2. Otherwise instantiate new zombie
     const id = `zombie_${this.nextId++}`;
     const zombie = new ZombieAI(id, variant, position, this.scene);
     this.zombies.push(zombie);
@@ -123,7 +142,25 @@ export class ZombieManager {
     return closest ? { zombie: closest.zombie, hitPoint: closest.hitPoint } : null;
   }
 
+  public hasLineOfSight(from: THREE.Vector3, to: THREE.Vector3): boolean {
+    if (!this.physicsWorld) return true;
+
+    ZombieManager._scratchRayDir.subVectors(to, from);
+    const dist = ZombieManager._scratchRayDir.length();
+    if (dist < 0.1) return true;
+    ZombieManager._scratchRayDir.divideScalar(dist);
+
+    const hit = this.physicsWorld.raycast(from, ZombieManager._scratchRayDir, dist, true);
+    // If raycast hit something solid closer than the target, line of sight is obstructed
+    if (hit && hit.distance < dist - 0.4) {
+      return false;
+    }
+    return true;
+  }
+
   public update(dt: number, playerPos: THREE.Vector3): void {
+    const boundLos = this.physicsWorld ? this.hasLineOfSight.bind(this) : undefined;
+
     for (let i = this.zombies.length - 1; i >= 0; i--) {
       const zombie = this.zombies[i];
       const dist = zombie.getPosition().distanceTo(playerPos);
@@ -131,10 +168,26 @@ export class ZombieManager {
       // Distant culling optimization: Skip processing if beyond 55m
       if (dist > 55) continue;
 
-      zombie.update(dt, playerPos, (dmg) => {
-        this.survivalSystem.damage(dmg, zombie.config.name);
-      });
+      zombie.update(
+        dt,
+        playerPos,
+        (dmg) => {
+          this.survivalSystem.damage(dmg, zombie.config.name);
+        },
+        boundLos
+      );
     }
+  }
+
+  public recycleZombie(zombie: ZombieAI): void {
+    const idx = this.zombies.indexOf(zombie);
+    if (idx !== -1) {
+      this.zombies.splice(idx, 1);
+    }
+    if (!this.zombiePool.has(zombie.variant)) {
+      this.zombiePool.set(zombie.variant, []);
+    }
+    this.zombiePool.get(zombie.variant)!.push(zombie);
   }
 
   public dispose(): void {
@@ -142,5 +195,9 @@ export class ZombieManager {
       z.dispose();
     }
     this.zombies = [];
+    this.zombiePool.forEach((pool) => {
+      pool.forEach((z) => z.dispose());
+    });
+    this.zombiePool.clear();
   }
 }

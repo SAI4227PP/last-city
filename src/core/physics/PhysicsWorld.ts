@@ -10,6 +10,13 @@ export interface RaycastHit {
   rigidBody?: RAPIER.RigidBody;
 }
 
+export interface RigidBodyRecord {
+  body: RAPIER.RigidBody;
+  collider: RAPIER.Collider;
+  mesh?: THREE.Object3D;
+  ownerId?: string;
+}
+
 export class PhysicsWorld {
   private static isInitialized = false;
   private static initPromise: Promise<void> | null = null;
@@ -17,7 +24,7 @@ export class PhysicsWorld {
   public world: RAPIER.World | null = null;
   public rapier: typeof RAPIER;
   private gravityY: number;
-  private rigidBodies: Map<number, { body: RAPIER.RigidBody; mesh?: THREE.Object3D }> = new Map();
+  private rigidBodies: Map<number, RigidBodyRecord> = new Map();
 
   public static async init(): Promise<void> {
     if (!PhysicsWorld.isInitialized) {
@@ -35,7 +42,6 @@ export class PhysicsWorld {
     this.rapier = RAPIER;
     this.gravityY = gravityY;
 
-    // If RAPIER WASM was already initialized, instantiate the world immediately
     if (PhysicsWorld.isInitialized) {
       this.createRapierWorld();
     }
@@ -76,7 +82,8 @@ export class PhysicsWorld {
   public createStaticBox(
     position: THREE.Vector3,
     halfExtents: THREE.Vector3,
-    mesh?: THREE.Object3D
+    mesh?: THREE.Object3D,
+    ownerId?: string
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
     if (!this.world) {
       throw new Error('Cannot create static box: PhysicsWorld has not been initialized. Call await physicsWorld.initWorld() first.');
@@ -87,7 +94,7 @@ export class PhysicsWorld {
     const colliderDesc = RAPIER.ColliderDesc.cuboid(halfExtents.x, halfExtents.y, halfExtents.z);
     const collider = this.world.createCollider(colliderDesc, body);
 
-    this.rigidBodies.set(body.handle, { body, mesh });
+    this.rigidBodies.set(body.handle, { body, collider, mesh, ownerId });
     return { body, collider };
   }
 
@@ -95,7 +102,8 @@ export class PhysicsWorld {
     position: THREE.Vector3,
     halfHeight: number,
     radius: number,
-    mesh?: THREE.Object3D
+    mesh?: THREE.Object3D,
+    ownerId?: string
   ): { body: RAPIER.RigidBody; collider: RAPIER.Collider } {
     if (!this.world) {
       throw new Error('Cannot create dynamic capsule: PhysicsWorld has not been initialized. Call await physicsWorld.initWorld() first.');
@@ -108,7 +116,7 @@ export class PhysicsWorld {
     const colliderDesc = RAPIER.ColliderDesc.capsule(halfHeight, radius);
     const collider = this.world.createCollider(colliderDesc, body);
 
-    this.rigidBodies.set(body.handle, { body, mesh });
+    this.rigidBodies.set(body.handle, { body, collider, mesh, ownerId });
     return { body, collider };
   }
 
@@ -140,6 +148,10 @@ export class PhysicsWorld {
     return null;
   }
 
+  public getBodyCount(): number {
+    return this.rigidBodies.size;
+  }
+
   public removeRigidBody(body: RAPIER.RigidBody): void {
     this.rigidBodies.delete(body.handle);
     if (this.world) {
@@ -147,6 +159,23 @@ export class PhysicsWorld {
         this.world.removeRigidBody(body);
       } catch (_) {}
     }
+  }
+
+  public clearBodiesByOwner(ownerId: string): void {
+    if (!this.world) return;
+    const toRemove: number[] = [];
+
+    this.rigidBodies.forEach((record, handle) => {
+      if (record.ownerId === ownerId) {
+        try {
+          this.world!.removeRigidBody(record.body);
+        } catch (_) {}
+        toRemove.push(handle);
+      }
+    });
+
+    toRemove.forEach((h) => this.rigidBodies.delete(h));
+    Logger.info(`Cleared ${toRemove.length} physics bodies for owner "${ownerId}".`);
   }
 
   public clearBodies(): void {

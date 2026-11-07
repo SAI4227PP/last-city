@@ -40,6 +40,12 @@ export class AudioManager {
     }
   }
 
+  public suspendContext(): void {
+    if (this.audioCtx && this.audioCtx.state === 'running') {
+      this.audioCtx.suspend();
+    }
+  }
+
   public setSettings(settings: Partial<AudioSettings>): void {
     this.settings = { ...this.settings, ...settings };
     if (this.ambientGain && this.audioCtx) {

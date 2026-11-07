@@ -13,6 +13,7 @@ import { ParticleSystem } from '@/core/engine/ParticleSystem';
 import { ModelFactory } from '@/core/assets/ModelFactory';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { AudioManager } from '@/core/audio/AudioManager';
+import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { SaveManager } from '@/persistence/SaveManager';
 import { EventBus } from '@/core/events/EventBus';
 import { Logger } from '@/core/utils/Logger';
@@ -56,7 +57,7 @@ export class OpenSurvivalScene extends BaseScene {
     this.craftingManager = new CraftingManager(this.inventoryManager);
     this.particleSystem = new ParticleSystem(this.scene, 1500);
     this.combatManager = new CombatManager(this.scene, this.engine.cameraManager, this.particleSystem);
-    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem);
+    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem, this.engine.physicsWorld);
     this.combatManager.setZombieManager(this.zombieManager);
     this.missionManager = new MissionManager();
 
@@ -139,12 +140,13 @@ export class OpenSurvivalScene extends BaseScene {
     this.scene.add(ground);
     this.engine.physicsWorld.createStaticBox(new THREE.Vector3(0, -0.5, 0), new THREE.Vector3(70, 0.5, 70));
 
-    // Directional Sunlight / Moody Dawn
+    // Directional Sunlight with adaptive shadow resolution
+    const perfConfig = PerformanceManager.getInstance().getConfig();
     const sun = new THREE.DirectionalLight(0xd9b382, 1.4);
     sun.position.set(45, 60, -35);
-    sun.castShadow = true;
-    sun.shadow.mapSize.width = 2048;
-    sun.shadow.mapSize.height = 2048;
+    sun.castShadow = perfConfig.shadows;
+    sun.shadow.mapSize.width = perfConfig.shadowMapSize;
+    sun.shadow.mapSize.height = perfConfig.shadowMapSize;
     this.scene.add(sun);
 
     const ambient = new THREE.AmbientLight(0x131a24, 1.2);
@@ -300,6 +302,33 @@ export class OpenSurvivalScene extends BaseScene {
       lamp.position.copy(pos).add(new THREE.Vector3(0, 4.3, 0));
       this.scene.add(lamp);
     }
+
+    // Instanced Concrete Barricades & Debris Piles in Open Survival (1 draw call)
+    const barrierGeo = new THREE.BoxGeometry(2.4, 0.9, 0.5);
+    const barrierMat = new THREE.MeshStandardMaterial({ color: 0x3e4756, roughness: 0.85 });
+    const barrierPositions = [
+      new THREE.Vector3(-12, 0.45, 10),
+      new THREE.Vector3(-9.5, 0.45, 10),
+      new THREE.Vector3(14, 0.45, 8),
+      new THREE.Vector3(16.5, 0.45, 8),
+      new THREE.Vector3(0, 0.45, -20),
+      new THREE.Vector3(2.5, 0.45, -20),
+      new THREE.Vector3(-15, 0.45, -10),
+      new THREE.Vector3(18, 0.45, -25)
+    ];
+    const barrierInstanced = new THREE.InstancedMesh(barrierGeo, barrierMat, barrierPositions.length);
+    const dummy = new THREE.Object3D();
+    barrierPositions.forEach((pos, i) => {
+      dummy.position.copy(pos);
+      dummy.rotation.set(0, i % 2 === 0 ? 0.2 : -0.25, 0);
+      dummy.updateMatrix();
+      barrierInstanced.setMatrixAt(i, dummy.matrix);
+      this.engine.physicsWorld.createStaticBox(pos, new THREE.Vector3(1.2, 0.45, 0.25));
+    });
+    barrierInstanced.instanceMatrix.needsUpdate = true;
+    barrierInstanced.castShadow = perfConfig.shadows;
+    barrierInstanced.receiveShadow = true;
+    this.scene.add(barrierInstanced);
   }
 
   private spawnDistrictZombies(): void {

@@ -53,7 +53,7 @@ export class HospitalScene extends BaseScene {
     this.inventoryManager = new InventoryManager();
     this.particleSystem = new ParticleSystem(this.scene);
     this.combatManager = new CombatManager(this.scene, this.engine.cameraManager, this.particleSystem);
-    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem);
+    this.zombieManager = new ZombieManager(this.scene, this.survivalSystem, this.engine.physicsWorld);
     this.combatManager.setZombieManager(this.zombieManager);
     this.missionManager = new MissionManager();
 

@@ -1,16 +1,29 @@
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { Logger } from '@/core/utils/Logger';
+import { SaveManager } from '@/persistence/SaveManager';
+import { GraphicsSettings } from '@/shared/types';
 
 export type GraphicsProfile = 'auto' | 'low' | 'medium' | 'high';
+export type ShadowQuality = 'off' | 'low' | 'high';
+export type ParticleQuality = 'low' | 'medium' | 'high';
+export type EnvironmentalDetail = 'low' | 'high';
 
 export interface PerformanceConfig {
   profile: GraphicsProfile;
+  resolvedProfile: 'low' | 'medium' | 'high';
   renderScale: number;
   maxDpr: number;
   shadows: boolean;
+  shadowQuality: ShadowQuality;
   shadowMapSize: number;
-  maxActiveZombies: number;
+  particleQuality: ParticleQuality;
   particleScale: number;
+  environmentalDetail: EnvironmentalDetail;
+  maxActiveZombies: number;
+  maxSubSteps: number;
+  showFps: boolean;
+  showDiagnostics: boolean;
+  isManualOverride: boolean;
 }
 
 export class PerformanceManager {
@@ -22,34 +35,38 @@ export class PerformanceManager {
   private frameTimes: number[] = [];
   private readonly sampleSize: number = 60; // Sample last ~1 second
   private lastEvaluationTime: number = 0;
-  private readonly evaluationCooldown: number = 4.0; // 4 seconds between auto-adjustments
+  private readonly evaluationCooldown: number = 4.0; // 4 seconds cooldown prevents flickering
 
-  // Current applied config
   private config: PerformanceConfig = {
     profile: 'auto',
+    resolvedProfile: 'medium',
     renderScale: 0.85,
     maxDpr: 1.25,
     shadows: true,
+    shadowQuality: 'low',
     shadowMapSize: 1024,
+    particleQuality: 'medium',
+    particleScale: 0.7,
+    environmentalDetail: 'high',
     maxActiveZombies: 14,
-    particleScale: 0.7
+    maxSubSteps: 3,
+    showFps: true,
+    showDiagnostics: false,
+    isManualOverride: false
   };
 
+  private configListeners: Set<(config: PerformanceConfig) => void> = new Set();
   public onConfigChanged?: (config: PerformanceConfig) => void;
 
+  public addConfigListener(listener: (config: PerformanceConfig) => void): () => void {
+    this.configListeners.add(listener);
+    return () => this.configListeners.delete(listener);
+  }
+
   private constructor() {
-    // Detect mobile device
-    const isMobile = typeof navigator !== 'undefined' &&
-      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-
-    if (isMobile) {
-      Logger.info('Mobile environment detected. Setting default profile to Low/Adaptive.');
-      this.currentResolvedProfile = 'low';
-    } else {
-      this.currentResolvedProfile = 'medium';
-    }
-
-    this.applyResolvedProfile(this.currentResolvedProfile, false);
+    // Start with balanced medium profile as baseline; auto-adjuster or persisted settings will refine
+    this.applyResolvedProfile('medium', false);
+    this.initFromStorage();
   }
 
   public static getInstance(): PerformanceManager {
@@ -63,17 +80,139 @@ export class PerformanceManager {
     return { ...this.config };
   }
 
+  public async initFromStorage(): Promise<void> {
+    try {
+      const settings = await SaveManager.getInstance().loadSettings();
+      if (settings && settings.graphics) {
+        const g = settings.graphics;
+        this.activeProfile = g.quality;
+        this.config.showFps = g.showFps ?? true;
+        this.config.showDiagnostics = g.showDiagnostics ?? false;
+
+        if (g.quality === 'auto') {
+          this.config.isManualOverride = false;
+          this.evaluatePerformance(true);
+        } else {
+          this.config.isManualOverride = true;
+          this.applyResolvedProfile(g.quality, true);
+          if (g.shadows) this.setShadowQuality(g.shadows, false);
+          if (g.renderScale) this.setRenderScale(g.renderScale, false);
+          if (g.particleQuality) this.setParticleQuality(g.particleQuality, false);
+          if (g.environmentalDetail) this.setEnvironmentalDetail(g.environmentalDetail, false);
+        }
+
+        useGameUIStore.getState().setGraphicsProfile(this.activeProfile);
+        useGameUIStore.getState().setShowDiagnostics(this.config.showDiagnostics);
+        Logger.info(`Performance Manager loaded persisted graphics settings: profile=${this.activeProfile}`);
+      }
+    } catch (err) {
+      Logger.warn('Could not load graphics settings from storage:', err);
+    }
+  }
+
+  public async persistSettings(): Promise<void> {
+    try {
+      const current = await SaveManager.getInstance().loadSettings();
+      const updatedGraphics: GraphicsSettings = {
+        quality: this.activeProfile,
+        shadows: this.config.shadowQuality,
+        renderScale: this.config.renderScale,
+        particleQuality: this.config.particleQuality,
+        environmentalDetail: this.config.environmentalDetail,
+        showFps: this.config.showFps,
+        showDiagnostics: this.config.showDiagnostics
+      };
+
+      await SaveManager.getInstance().saveSettings({
+        audio: current?.audio || { masterVolume: 0.8, musicVolume: 0.6, sfxVolume: 0.8, muted: false },
+        graphics: updatedGraphics,
+        mouseSensitivity: current?.mouseSensitivity || 0.0022
+      });
+    } catch (err) {
+      Logger.warn('Failed to persist performance settings:', err);
+    }
+  }
+
   public setProfile(profile: GraphicsProfile): void {
     this.activeProfile = profile;
     useGameUIStore.getState().setGraphicsProfile(profile);
 
     if (profile === 'auto') {
+      this.config.isManualOverride = false;
+      this.config.profile = 'auto';
       Logger.info('Graphics profile set to AUTO (Dynamic Adaptive Mode).');
       this.evaluatePerformance(true);
     } else {
+      this.config.isManualOverride = true;
       Logger.info(`Graphics profile manually locked to: ${profile.toUpperCase()}`);
       this.applyResolvedProfile(profile, true);
     }
+
+    this.persistSettings();
+  }
+
+  public setShadowQuality(quality: ShadowQuality, persist: boolean = true): void {
+    this.config.shadowQuality = quality;
+    if (quality === 'off') {
+      this.config.shadows = false;
+      this.config.shadowMapSize = 512;
+    } else if (quality === 'low') {
+      this.config.shadows = true;
+      this.config.shadowMapSize = 1024;
+    } else {
+      this.config.shadows = true;
+      this.config.shadowMapSize = 2048;
+    }
+
+    if (persist) {
+      this.config.isManualOverride = true;
+      this.notifyConfigChanged();
+      this.persistSettings();
+    }
+  }
+
+  public setRenderScale(scale: number, persist: boolean = true): void {
+    this.config.renderScale = Math.max(0.5, Math.min(scale, 1.0));
+    if (persist) {
+      this.config.isManualOverride = true;
+      this.notifyConfigChanged();
+      this.persistSettings();
+    }
+  }
+
+  public setParticleQuality(quality: ParticleQuality, persist: boolean = true): void {
+    this.config.particleQuality = quality;
+    if (quality === 'low') this.config.particleScale = 0.35;
+    else if (quality === 'medium') this.config.particleScale = 0.7;
+    else this.config.particleScale = 1.0;
+
+    if (persist) {
+      this.config.isManualOverride = true;
+      this.notifyConfigChanged();
+      this.persistSettings();
+    }
+  }
+
+  public setEnvironmentalDetail(detail: EnvironmentalDetail, persist: boolean = true): void {
+    this.config.environmentalDetail = detail;
+    if (persist) {
+      this.config.isManualOverride = true;
+      this.notifyConfigChanged();
+      this.persistSettings();
+    }
+  }
+
+  public setShowFps(show: boolean): void {
+    this.config.showFps = show;
+    this.notifyConfigChanged();
+    this.persistSettings();
+  }
+
+  public setShowDiagnostics(show: boolean): void {
+    this.config.showDiagnostics = show;
+    useGameUIStore.getState().setShowDiagnostics(show);
+    this.notifyConfigChanged();
+    this.persistSettings();
   }
 
   public recordFrame(deltaTime: number, totalTime: number): void {
@@ -85,7 +224,7 @@ export class PerformanceManager {
     }
 
     // Auto-adaptation evaluation
-    if (this.activeProfile === 'auto') {
+    if (this.activeProfile === 'auto' && !this.config.isManualOverride) {
       if (totalTime - this.lastEvaluationTime >= this.evaluationCooldown) {
         this.evaluatePerformance(false);
         this.lastEvaluationTime = totalTime;
@@ -111,7 +250,7 @@ export class PerformanceManager {
 
     // Hysteresis thresholds:
     // Drop to Low if FPS < 28 for sustained period
-    // Promote to High if FPS > 55
+    // Promote to High if FPS > 54
     let target: 'low' | 'medium' | 'high' = this.currentResolvedProfile;
 
     if (avgFps < 28) {
@@ -133,45 +272,75 @@ export class PerformanceManager {
     switch (profile) {
       case 'low':
         this.config = {
+          ...this.config,
           profile: this.activeProfile,
-          renderScale: 0.70,
+          resolvedProfile: 'low',
+          renderScale: 0.75,
           maxDpr: 1.0,
           shadows: false,
+          shadowQuality: 'off',
           shadowMapSize: 512,
+          particleQuality: 'low',
+          particleScale: 0.35,
+          environmentalDetail: 'low',
           maxActiveZombies: 8,
-          particleScale: 0.35
+          maxSubSteps: 2
         };
         break;
 
       case 'medium':
         this.config = {
+          ...this.config,
           profile: this.activeProfile,
+          resolvedProfile: 'medium',
           renderScale: 0.85,
           maxDpr: 1.25,
           shadows: true,
+          shadowQuality: 'low',
           shadowMapSize: 1024,
+          particleQuality: 'medium',
+          particleScale: 0.7,
+          environmentalDetail: 'high',
           maxActiveZombies: 14,
-          particleScale: 0.7
+          maxSubSteps: 3
         };
         break;
 
       case 'high':
         this.config = {
+          ...this.config,
           profile: this.activeProfile,
+          resolvedProfile: 'high',
           renderScale: 1.0,
           maxDpr: 1.5,
           shadows: true,
+          shadowQuality: 'high',
           shadowMapSize: 2048,
+          particleQuality: 'high',
+          particleScale: 1.0,
+          environmentalDetail: 'high',
           maxActiveZombies: 24,
-          particleScale: 1.0
+          maxSubSteps: 3
         };
         break;
     }
 
-    Logger.info(`Performance Manager applied profile [${profile.toUpperCase()}]: RenderScale=${this.config.renderScale}, MaxDPR=${this.config.maxDpr}, Shadows=${this.config.shadows}`);
+    Logger.info(
+      `Performance Manager applied profile [${profile.toUpperCase()}]: RenderScale=${this.config.renderScale}, MaxDPR=${this.config.maxDpr}, Shadows=${this.config.shadows}`
+    );
 
-    if (notify && this.onConfigChanged) {
-      this.onConfigChanged(this.config);
+    if (notify) {
+      this.notifyConfigChanged();
+    }
+  }
+
+  private notifyConfigChanged(): void {
+    const cfg = this.getConfig();
+    if (this.onConfigChanged) {
+      this.onConfigChanged(cfg);
+    }
+    for (const listener of this.configListeners) {
+      listener(cfg);
     }
   }
 }

@@ -1,5 +1,6 @@
 import { Time } from './Time';
 import { Logger } from '@/core/utils/Logger';
+import { AudioManager } from '@/core/audio/AudioManager';
 
 export type UpdateCallback = (deltaTime: number, totalTime: number) => void;
 export type FixedUpdateCallback = (fixedDelta: number) => void;
@@ -12,22 +13,39 @@ export class GameLoop {
 
   // Fixed timestep for physics simulation (60Hz = 1/60 = 0.01666s)
   private readonly fixedDeltaTime: number = 1 / 60;
-  // Maximum substeps allowed in a single frame to prevent spiral of death
-  private readonly maxSubSteps: number = 3;
+  // Maximum substeps allowed in a single frame to prevent spiral of death (2 for low-end, 3 for mid/high)
+  private maxSubSteps: number = 3;
   private accumulator: number = 0;
 
   private updateCallbacks: Set<UpdateCallback> = new Set();
   private fixedUpdateCallbacks: Set<FixedUpdateCallback> = new Set();
   private renderCallbacks: Set<() => void> = new Set();
   private onVisibilityChangeBound: () => void;
+  private onPageHideBound: () => void;
+  private onPageShowBound: () => void;
 
   constructor() {
     this.tick = this.tick.bind(this);
     this.lastTimestamp = typeof performance !== 'undefined' ? performance.now() : 0;
     this.onVisibilityChangeBound = this.onVisibilityChange.bind(this);
+    this.onPageHideBound = this.onPageHide.bind(this);
+    this.onPageShowBound = this.onPageShow.bind(this);
+
     if (typeof document !== 'undefined') {
       document.addEventListener('visibilitychange', this.onVisibilityChangeBound);
     }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', this.onPageHideBound);
+      window.addEventListener('pageshow', this.onPageShowBound);
+    }
+  }
+
+  public setMaxSubSteps(substeps: number): void {
+    this.maxSubSteps = Math.max(1, Math.min(substeps, 5));
+  }
+
+  public getMaxSubSteps(): number {
+    return this.maxSubSteps;
   }
 
   public registerUpdate(cb: UpdateCallback): () => void {
@@ -85,13 +103,26 @@ export class GameLoop {
 
   private onVisibilityChange(): void {
     if (document.hidden) {
-      // Tab hidden or backgrounded on mobile: reset accumulator
+      // Tab hidden or backgrounded on mobile: reset accumulator and suspend audio context
       this.accumulator = 0;
+      AudioManager.getInstance().suspendContext();
     } else {
-      // Resumed: synchronize timestamps to prevent sudden huge delta
+      // Resumed: synchronize timestamps to prevent sudden huge delta and resume audio
       this.lastTimestamp = performance.now();
       this.accumulator = 0;
+      AudioManager.getInstance().resumeContext();
     }
+  }
+
+  private onPageHide(): void {
+    this.accumulator = 0;
+    AudioManager.getInstance().suspendContext();
+  }
+
+  private onPageShow(): void {
+    this.lastTimestamp = performance.now();
+    this.accumulator = 0;
+    AudioManager.getInstance().resumeContext();
   }
 
   private tick(currentTimestamp: number): void {
@@ -148,6 +179,10 @@ export class GameLoop {
     this.stop();
     if (typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this.onVisibilityChangeBound);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pagehide', this.onPageHideBound);
+      window.removeEventListener('pageshow', this.onPageShowBound);
     }
   }
 }

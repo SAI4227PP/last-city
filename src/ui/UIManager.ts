@@ -40,6 +40,11 @@ export class UIManager {
         <span id="diagnostics-text">FPS: 60 | FT: 16.6ms | DC: 80</span>
       </div>
 
+      <!-- REAL-TIME FPS BADGE -->
+      <div id="hud-fps" class="perf-diagnostics-badge" style="display: block; top: 12px; right: 12px; left: auto; font-size: 13px; font-weight: 800; color: #48bb78; background: rgba(13, 17, 23, 0.85); padding: 4px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.15);">
+        <span id="fps-counter-val">60 FPS</span>
+      </div>
+
       <!-- CINEMATIC OVERLAY -->
       <div id="cinematic-screen" class="cinematic-overlay" style="display: none;">
         <div class="cinematic-letterbox"></div>
@@ -210,7 +215,7 @@ export class UIManager {
 
       <!-- SETTINGS MODAL -->
       <div id="settings-modal" class="modal-backdrop interactive" style="display: none;">
-        <div class="inventory-modal" style="max-width: 520px; padding: 24px;">
+        <div class="inventory-modal" style="max-width: 540px; padding: 24px; max-height: 88vh; overflow-y: auto;">
           <h3 style="margin-bottom: 16px;">GRAPHICS & PERFORMANCE</h3>
 
           <!-- Graphics Profile Preset -->
@@ -218,31 +223,72 @@ export class UIManager {
             <label style="display: block; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 6px;">GRAPHICS PRESET</label>
             <div class="profile-pill-group">
               <button class="profile-pill active" data-profile="auto">AUTO (ADAPTIVE)</button>
-              <button class="profile-pill" data-profile="low">LOW (INTEL/MOBILE)</button>
+              <button class="profile-pill" data-profile="low">LOW</button>
               <button class="profile-pill" data-profile="medium">MEDIUM</button>
-              <button class="profile-pill" data-profile="high">HIGH (DEDICATED)</button>
+              <button class="profile-pill" data-profile="high">HIGH</button>
             </div>
           </div>
 
-          <div style="margin-bottom: 18px;">
+          <!-- Advanced Performance Tweaks -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 6px;">SHADOWS</label>
+              <select id="select-shadows" class="menu-btn" style="width: 100%; padding: 6px 10px; font-size: 13px; text-align: left;">
+                <option value="off">Off (Intel / Low-end)</option>
+                <option value="low">Low (1024² PCF)</option>
+                <option value="high">High (2048² PCFSoft)</option>
+              </select>
+            </div>
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 6px;">PARTICLES</label>
+              <select id="select-particles" class="menu-btn" style="width: 100%; padding: 6px 10px; font-size: 13px; text-align: left;">
+                <option value="low">Low (35% density)</option>
+                <option value="medium">Medium (70% density)</option>
+                <option value="high">High (100% density)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px;">
+            <div>
+              <label style="display: block; font-size: 12px; font-weight: 700; color: var(--color-text-secondary); margin-bottom: 6px;">ENVIRONMENT DETAIL</label>
+              <select id="select-env-detail" class="menu-btn" style="width: 100%; padding: 6px 10px; font-size: 13px; text-align: left;">
+                <option value="low">Low (Reduced foliage/props)</option>
+                <option value="high">High (Full world props)</option>
+              </select>
+            </div>
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <label style="font-size: 12px; font-weight: 700; color: var(--color-text-secondary);">RENDER SCALE</label>
+                <span id="label-render-scale" style="font-size: 12px; color: var(--color-accent-amber); font-family: var(--font-mono);">85%</span>
+              </div>
+              <input type="range" id="slider-render-scale" min="0.6" max="1.0" step="0.05" value="0.85" style="width: 100%;" />
+            </div>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-primary); cursor: pointer;">
+              <input type="checkbox" id="check-fps" checked />
+              <span>SHOW REAL-TIME FPS COUNTER</span>
+            </label>
             <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--color-text-primary); cursor: pointer;">
               <input type="checkbox" id="check-diagnostics" />
               <span>SHOW PERFORMANCE DIAGNOSTICS OVERLAY</span>
             </label>
           </div>
 
-          <h3 style="margin-bottom: 16px;">AUDIO VOLUMES</h3>
-          <div style="display: flex; flex-direction: column; gap: 14px; margin-bottom: 24px;">
+          <h3 style="margin-bottom: 14px;">AUDIO VOLUMES</h3>
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px;">
             <div>
-              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">MASTER VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">MASTER VOLUME</label>
               <input type="range" id="slider-master" min="0" max="1" step="0.05" value="0.8" style="width: 100%;" />
             </div>
             <div>
-              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">SFX VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">SFX VOLUME</label>
               <input type="range" id="slider-sfx" min="0" max="1" step="0.05" value="0.8" style="width: 100%;" />
             </div>
             <div>
-              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 6px;">MUSIC VOLUME</label>
+              <label style="display: block; font-size: 12px; color: var(--color-text-secondary); margin-bottom: 4px;">MUSIC VOLUME</label>
               <input type="range" id="slider-music" min="0" max="1" step="0.05" value="0.6" style="width: 100%;" />
             </div>
           </div>
@@ -436,10 +482,55 @@ export class UIManager {
     });
 
     // Settings Modal
+    const syncSettingsModalUI = () => {
+      const perf = PerformanceManager.getInstance();
+      const cfg = perf.getConfig();
+      const audio = AudioManager.getInstance().getSettings();
+
+      // Update profile pills
+      document.querySelectorAll('.profile-pill').forEach((p) => {
+        const prof = p.getAttribute('data-profile');
+        if (prof === perf.activeProfile) p.classList.add('active');
+        else p.classList.remove('active');
+      });
+
+      // Update dropdowns & sliders
+      const selectShadows = document.getElementById('select-shadows') as HTMLSelectElement | null;
+      if (selectShadows) selectShadows.value = cfg.shadowQuality;
+
+      const selectParticles = document.getElementById('select-particles') as HTMLSelectElement | null;
+      if (selectParticles) selectParticles.value = cfg.particleQuality;
+
+      const selectEnv = document.getElementById('select-env-detail') as HTMLSelectElement | null;
+      if (selectEnv) selectEnv.value = cfg.environmentalDetail;
+
+      const sliderScale = document.getElementById('slider-render-scale') as HTMLInputElement | null;
+      const labelScale = document.getElementById('label-render-scale');
+      if (sliderScale && labelScale) {
+        sliderScale.value = cfg.renderScale.toString();
+        labelScale.textContent = `${Math.round(cfg.renderScale * 100)}%`;
+      }
+
+      const checkFps = document.getElementById('check-fps') as HTMLInputElement | null;
+      if (checkFps) checkFps.checked = cfg.showFps;
+
+      const checkDiag = document.getElementById('check-diagnostics') as HTMLInputElement | null;
+      if (checkDiag) checkDiag.checked = cfg.showDiagnostics;
+
+      const sMaster = document.getElementById('slider-master') as HTMLInputElement | null;
+      if (sMaster) sMaster.value = audio.masterVolume.toString();
+      const sSfx = document.getElementById('slider-sfx') as HTMLInputElement | null;
+      if (sSfx) sSfx.value = audio.sfxVolume.toString();
+      const sMusic = document.getElementById('slider-music') as HTMLInputElement | null;
+      if (sMusic) sMusic.value = audio.musicVolume.toString();
+    };
+
     document.getElementById('btn-open-settings')?.addEventListener('click', () => {
+      syncSettingsModalUI();
       document.getElementById('settings-modal')!.style.display = 'flex';
     });
     document.getElementById('btn-pause-settings')?.addEventListener('click', () => {
+      syncSettingsModalUI();
       document.getElementById('settings-modal')!.style.display = 'flex';
     });
     document.getElementById('btn-close-settings')?.addEventListener('click', () => {
@@ -455,14 +546,45 @@ export class UIManager {
           PerformanceManager.getInstance().setProfile(profile);
           document.querySelectorAll('.profile-pill').forEach((p) => p.classList.remove('active'));
           target.classList.add('active');
+          syncSettingsModalUI();
         }
       });
     });
 
-    // Performance Diagnostics Toggle
+    // Granular Graphics Controls
+    document.getElementById('select-shadows')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value as any;
+      PerformanceManager.getInstance().setShadowQuality(val);
+    });
+
+    document.getElementById('select-particles')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value as any;
+      PerformanceManager.getInstance().setParticleQuality(val);
+    });
+
+    document.getElementById('select-env-detail')?.addEventListener('change', (e) => {
+      const val = (e.target as HTMLSelectElement).value as any;
+      PerformanceManager.getInstance().setEnvironmentalDetail(val);
+    });
+
+    document.getElementById('slider-render-scale')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      const label = document.getElementById('label-render-scale');
+      if (label) label.textContent = `${Math.round(val * 100)}%`;
+      PerformanceManager.getInstance().setRenderScale(val);
+    });
+
+    // Checkboxes
+    document.getElementById('check-fps')?.addEventListener('change', (e) => {
+      const checked = (e.target as HTMLInputElement).checked;
+      PerformanceManager.getInstance().setShowFps(checked);
+      const fpsEl = document.getElementById('hud-fps');
+      if (fpsEl) fpsEl.style.display = checked ? 'block' : 'none';
+    });
+
     document.getElementById('check-diagnostics')?.addEventListener('change', (e) => {
       const checked = (e.target as HTMLInputElement).checked;
-      useGameUIStore.getState().setShowDiagnostics(checked);
+      PerformanceManager.getInstance().setShowDiagnostics(checked);
     });
 
     // Audio Sliders
@@ -591,6 +713,13 @@ export class UIManager {
       if (state.showDiagnostics) {
         document.getElementById('diagnostics-text')!.innerText = state.diagnosticsText || `FPS: ${state.fps}`;
       }
+    }
+
+    // Real-Time FPS Badge
+    const fpsVal = document.getElementById('fps-counter-val');
+    if (fpsVal) {
+      fpsVal.innerText = `${state.fps} FPS`;
+      fpsVal.style.color = state.fps >= 50 ? '#48bb78' : state.fps >= 28 ? '#ecc94b' : '#f56565';
     }
 
     // Pause & Inventory Modals

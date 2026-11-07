@@ -18,7 +18,7 @@ export class ZombieAI {
   private targetPosition: THREE.Vector3 = new THREE.Vector3();
   private patrolOrigin: THREE.Vector3;
   private patrolTarget: THREE.Vector3 = new THREE.Vector3();
-  private stateTimer: number = 0;
+  private stateTimer: number = 3.0;
   private attackCooldownTimer: number = 0;
   private strideTimer: number = 0;
   private eventBus: EventBus;
@@ -30,6 +30,7 @@ export class ZombieAI {
   private static readonly _scratchMoveDir: THREE.Vector3 = new THREE.Vector3();
   private static readonly _scratchLookDir: THREE.Vector3 = new THREE.Vector3();
   private static readonly _scratchForward: THREE.Vector3 = new THREE.Vector3(0, 0, 1);
+  private static readonly _scratchEyePos: THREE.Vector3 = new THREE.Vector3();
 
   // Collision bounding cylinder
   public readonly hitRadius: number;
@@ -61,6 +62,29 @@ export class ZombieAI {
 
   public getPosition(): THREE.Vector3 {
     return this.group.position;
+  }
+
+  public getEyePosition(): THREE.Vector3 {
+    ZombieAI._scratchEyePos.copy(this.group.position);
+    ZombieAI._scratchEyePos.y += this.hitHeight * 0.85;
+    return ZombieAI._scratchEyePos;
+  }
+
+  public reset(spawnPosition: THREE.Vector3): void {
+    this.health = this.config.maxHealth;
+    this.isDead = false;
+    this.state = 'idle';
+    this.stateTimer = 2.0;
+    this.attackCooldownTimer = 0;
+    this.strideTimer = 0;
+    this.patrolOrigin.copy(spawnPosition);
+    this.patrolTarget.copy(spawnPosition);
+    this.group.position.copy(spawnPosition);
+    this.group.rotation.set(0, 0, 0);
+
+    this.modelParts.eyeLights.forEach((light) => {
+      light.intensity = 1.2;
+    });
   }
 
   public alertToNoise(noisePosition: THREE.Vector3, intensity: number): void {
@@ -115,7 +139,12 @@ export class ZombieAI {
     return ZombieAI._scratchForward.normalize();
   }
 
-  public update(dt: number, playerPos: THREE.Vector3, onAttackPlayer: (dmg: number) => void): void {
+  public update(
+    dt: number,
+    playerPos: THREE.Vector3,
+    onAttackPlayer: (dmg: number) => void,
+    hasLineOfSight?: (from: THREE.Vector3, to: THREE.Vector3) => boolean
+  ): void {
     if (this.isDead) return;
 
     const distToPlayer = this.group.position.distanceTo(playerPos);
@@ -123,24 +152,29 @@ export class ZombieAI {
     this.updateFrameCounter++;
 
     // Multi-tier distance optimization:
-    // Distant zombies (> 35m) only run AI every 8th frame
-    if (distToPlayer > 35 && this.updateFrameCounter % 8 !== 0) {
+    // Distant zombies (> 35m) only run AI every 12th frame (~5Hz)
+    if (distToPlayer > 35 && this.updateFrameCounter % 12 !== 0) {
       return;
     }
-    // Mid-distance zombies (15m - 35m) run AI every 3rd frame
+    // Mid-distance zombies (15m - 35m) run AI every 3rd frame (~20Hz)
     if (distToPlayer > 15 && distToPlayer <= 35 && this.updateFrameCounter % 3 !== 0) {
-      // Just step movement forward if chasing
+      // Step movement forward if chasing
       if (this.state === 'chase') {
         this.moveTo(playerPos, this.config.runSpeed, dt);
       }
       return;
     }
 
+    const canSeePlayer = (): boolean => {
+      if (!hasLineOfSight) return true;
+      return hasLineOfSight(this.getEyePosition(), playerPos);
+    };
+
     // 1. Perception & State Evaluation (Near or Scheduled frame)
     switch (this.state) {
       case 'idle':
         this.stateTimer -= dt;
-        if (distToPlayer <= this.config.detectionRadius) {
+        if (distToPlayer <= this.config.detectionRadius && canSeePlayer()) {
           this.state = 'chase';
           this.eventBus.emit('audio:play_sfx', { sound: 'zombie_attack', volume: 0.8 });
         } else if (this.stateTimer <= 0) {
@@ -156,7 +190,7 @@ export class ZombieAI {
 
       case 'patrol':
         this.stateTimer -= dt;
-        if (distToPlayer <= this.config.detectionRadius) {
+        if (distToPlayer <= this.config.detectionRadius && canSeePlayer()) {
           this.state = 'chase';
           this.eventBus.emit('audio:play_sfx', { sound: 'zombie_attack', volume: 0.8 });
         } else {
@@ -170,7 +204,7 @@ export class ZombieAI {
 
       case 'investigate':
         this.stateTimer -= dt;
-        if (distToPlayer <= this.config.detectionRadius) {
+        if (distToPlayer <= this.config.detectionRadius && canSeePlayer()) {
           this.state = 'chase';
         } else {
           this.moveTo(this.targetPosition, this.config.walkSpeed * 1.2, dt);
@@ -199,7 +233,8 @@ export class ZombieAI {
 
         if (this.attackCooldownTimer <= 0) {
           this.attackCooldownTimer = this.config.attackCooldown;
-          if (distToPlayer <= this.config.attackRange + 0.5) {
+          // Only damage player if in attack range and unobstructed by walls
+          if (distToPlayer <= this.config.attackRange + 0.5 && canSeePlayer()) {
             onAttackPlayer(this.config.attackDamage);
             this.eventBus.emit('audio:play_sfx', { sound: 'zombie_attack', volume: 0.9 });
           }
