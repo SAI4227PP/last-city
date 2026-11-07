@@ -4,12 +4,20 @@ import { ZombieVariantType } from '@/shared/types';
 import { SurvivalSystem } from '@/features/survival/SurvivalSystem';
 import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
+import { HitLocation } from '@/data/combat';
 
 export interface ZombieRayHit {
   zombie: ZombieAI;
   hitPoint: THREE.Vector3;
   distance: number;
   isHeadshot: boolean;
+  hitLocation: HitLocation;
+}
+
+export interface ZombieMeleeHit {
+  zombie: ZombieAI;
+  hitPoint: THREE.Vector3;
+  hitLocation: HitLocation;
 }
 
 export class ZombieManager {
@@ -89,16 +97,37 @@ export class ZombieManager {
         const lateralDist = ZombieManager._scratchRayPoint.distanceTo(ZombieManager._scratchZombiePos);
 
         if (lateralDist <= zombie.hitRadius + 0.3) {
+          // Check line-of-sight / wall obstruction between rayOrigin and candidate hit
+          if (this.physicsWorld) {
+            const wallHit = this.physicsWorld.raycast(rayOrigin, rayDir, proj, true);
+            if (wallHit && wallHit.distance < proj - 0.25) {
+              // Wall blocks this shot
+              continue;
+            }
+          }
+
           const hitPoint = ZombieManager._scratchRayPoint.clone();
           const hitHeightOnZombie = hitPoint.y - zPos.y;
-          const isHeadshot = hitHeightOnZombie >= zombie.hitHeight * 0.72;
+          const hitFraction = hitHeightOnZombie / zombie.hitHeight;
+
+          let hitLocation: HitLocation = 'torso';
+          if (hitFraction >= 0.72) {
+            hitLocation = 'head';
+          } else if (hitFraction < 0.38) {
+            hitLocation = 'legs';
+          } else if (lateralDist > zombie.hitRadius * 0.62) {
+            hitLocation = 'arms';
+          } else {
+            hitLocation = 'torso';
+          }
 
           closestDist = proj;
           closestHit = {
             zombie,
             hitPoint,
             distance: proj,
-            isHeadshot
+            isHeadshot: hitLocation === 'head',
+            hitLocation
           };
         }
       }
@@ -112,8 +141,8 @@ export class ZombieManager {
     forwardDir: THREE.Vector3,
     range: number,
     angleSpreadRad: number
-  ): { zombie: ZombieAI; hitPoint: THREE.Vector3 } | null {
-    let closest: { zombie: ZombieAI; hitPoint: THREE.Vector3; dist: number } | null = null;
+  ): ZombieMeleeHit | null {
+    let closest: { zombie: ZombieAI; hitPoint: THREE.Vector3; dist: number; hitLocation: HitLocation } | null = null;
 
     for (const zombie of this.zombies) {
       if (zombie.isDead) continue;
@@ -128,18 +157,27 @@ export class ZombieManager {
         const angle = forwardDir.angleTo(ZombieManager._scratchToZombie);
 
         if (angle <= angleSpreadRad) {
+          // Check line-of-sight / wall obstruction for melee sweep
+          if (this.physicsWorld) {
+            const wallHit = this.physicsWorld.raycast(sweepOrigin, ZombieManager._scratchToZombie, dist, true);
+            if (wallHit && wallHit.distance < dist - 0.25) {
+              continue;
+            }
+          }
+
           if (!closest || dist < closest.dist) {
             closest = {
               zombie,
               hitPoint: zPos.clone().add(new THREE.Vector3(0, 1.2, 0)),
-              dist
+              dist,
+              hitLocation: 'torso'
             };
           }
         }
       }
     }
 
-    return closest ? { zombie: closest.zombie, hitPoint: closest.hitPoint } : null;
+    return closest ? { zombie: closest.zombie, hitPoint: closest.hitPoint, hitLocation: closest.hitLocation } : null;
   }
 
   public hasLineOfSight(from: THREE.Vector3, to: THREE.Vector3): boolean {
@@ -172,7 +210,7 @@ export class ZombieManager {
         dt,
         playerPos,
         (dmg) => {
-          this.survivalSystem.damage(dmg, zombie.config.name);
+          this.survivalSystem.damage(dmg, zombie.config.name, true);
         },
         boundLos
       );

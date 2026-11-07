@@ -1,4 +1,5 @@
 import { ZombieVariantType } from '@/shared/types';
+import { ARMOR_RESISTANCE_MODIFIERS, HitLocation } from './combat';
 
 export interface ZombieConfig {
   variant: ZombieVariantType;
@@ -13,13 +14,14 @@ export interface ZombieConfig {
   hearingRadius: number;
   scale: [number, number, number];
   tintColor: number;
+  armorMultipliers: Record<HitLocation, number>;
 }
 
 export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   walker: {
     variant: 'walker',
     name: 'Infected Shambler',
-    maxHealth: 60,
+    maxHealth: 100,
     walkSpeed: 1.8,
     runSpeed: 3.2,
     attackDamage: 15,
@@ -28,12 +30,13 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     detectionRadius: 14,
     hearingRadius: 18,
     scale: [1, 1, 1],
-    tintColor: 0x5a6351
+    tintColor: 0x5a6351,
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.walker
   },
   runner: {
     variant: 'runner',
     name: 'Feral Runner',
-    maxHealth: 45,
+    maxHealth: 80,
     walkSpeed: 2.5,
     runSpeed: 6.8,
     attackDamage: 12,
@@ -42,12 +45,13 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     detectionRadius: 20,
     hearingRadius: 26,
     scale: [0.95, 0.95, 0.95],
-    tintColor: 0x8a4b38
+    tintColor: 0x8a4b38,
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.runner
   },
   brute: {
     variant: 'brute',
     name: 'Armored Brute',
-    maxHealth: 180,
+    maxHealth: 250,
     walkSpeed: 1.3,
     runSpeed: 2.8,
     attackDamage: 35,
@@ -56,12 +60,13 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     detectionRadius: 12,
     hearingRadius: 15,
     scale: [1.4, 1.4, 1.4],
-    tintColor: 0x3d434d
+    tintColor: 0x3d434d,
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.brute
   },
   spitter: {
     variant: 'spitter',
     name: 'Toxic Spitter',
-    maxHealth: 50,
+    maxHealth: 120,
     walkSpeed: 1.6,
     runSpeed: 3.8,
     attackDamage: 20,
@@ -70,12 +75,13 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     detectionRadius: 18,
     hearingRadius: 22,
     scale: [1.0, 1.0, 1.0],
-    tintColor: 0x486b36
+    tintColor: 0x486b36,
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.spitter
   },
   boss: {
     variant: 'boss',
     name: 'Patient Zero Abomination',
-    maxHealth: 450,
+    maxHealth: 600,
     walkSpeed: 1.8,
     runSpeed: 4.5,
     attackDamage: 45,
@@ -84,6 +90,7 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     detectionRadius: 25,
     hearingRadius: 35,
     scale: [1.8, 1.8, 1.8],
-    tintColor: 0x2b1e22
+    tintColor: 0x2b1e22,
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.boss
   }
 };

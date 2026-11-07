@@ -14,6 +14,7 @@ export class SurvivalSystem {
 
   private eventBus: EventBus;
   private heartbeatTimer: number = 0;
+  private damageCooldownTimer: number = 0;
 
   constructor() {
     this.eventBus = EventBus.getInstance();
@@ -30,8 +31,14 @@ export class SurvivalSystem {
     this.syncToStore();
   }
 
-  public damage(amount: number, source: string = 'unknown'): void {
+  public damage(amount: number, source: string = 'unknown', checkCooldown: boolean = false): void {
     if (this.vitals.health <= 0) return;
+    if (checkCooldown && this.damageCooldownTimer > 0) return;
+
+    if (checkCooldown) {
+      this.damageCooldownTimer = 0.25; // 250ms invulnerability window against duplicate frame spam
+    }
+
     this.vitals.health = Math.max(0, this.vitals.health - amount);
     this.eventBus.emit('player:damage', { amount, source });
     this.eventBus.emit('audio:play_sfx', { sound: 'heartbeat', volume: 0.9 });
@@ -87,8 +94,10 @@ export class SurvivalSystem {
 
     // Starvation / Dehydration penalties
     if (this.vitals.hunger <= 0 || this.vitals.thirst <= 0) {
-      this.damage(1.5 * dt, 'Dehydration/Starvation');
+      this.damage(1.5 * dt, 'Dehydration/Starvation', true);
     }
+
+    this.damageCooldownTimer = Math.max(0, this.damageCooldownTimer - dt);
 
     // Low health heartbeat audio trigger
     if (this.vitals.health > 0 && this.vitals.health < 30) {

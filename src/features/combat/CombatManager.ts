@@ -1,6 +1,8 @@
 import * as THREE from 'three';
-import { WeaponType, WeaponStats } from '@/shared/types';
-import { WEAPON_DEFINITIONS } from '@/data/weapons';
+import { WeaponType } from '@/shared/types';
+import { WEAPON_DEFINITIONS, ExtendedWeaponStats } from '@/data/weapons';
+import { CombatConfigManager, HitLocation } from '@/data/combat';
+import { ZombieAI } from '@/features/zombies/ai/ZombieAI';
 import { EventBus } from '@/core/events/EventBus';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { CameraManager } from '@/core/engine/CameraManager';
@@ -8,7 +10,7 @@ import { ParticleSystem } from '@/core/engine/ParticleSystem';
 import { ZombieManager } from '@/features/zombies/ZombieManager';
 
 export class CombatManager {
-  private weapons: Record<WeaponType, WeaponStats>;
+  private weapons: Record<WeaponType, ExtendedWeaponStats>;
   private equippedWeapon: WeaponType = 'knife';
   private fireTimer: number = 0;
   private isReloading: boolean = false;
@@ -49,7 +51,7 @@ export class CombatManager {
     return this.equippedWeapon;
   }
 
-  public getWeaponStats(type: WeaponType): WeaponStats {
+  public getWeaponStats(type: WeaponType): ExtendedWeaponStats {
     return this.weapons[type];
   }
 
@@ -85,7 +87,7 @@ export class CombatManager {
     }
   }
 
-  private fireGun(playerPos: THREE.Vector3, forwardDir: THREE.Vector3, weapon: WeaponStats): boolean {
+  private fireGun(playerPos: THREE.Vector3, forwardDir: THREE.Vector3, weapon: ExtendedWeaponStats): boolean {
     if (weapon.currentAmmo <= 0) {
       this.eventBus.emit('audio:play_sfx', { sound: 'click', volume: 0.6 });
       this.reload();
@@ -119,21 +121,113 @@ export class CombatManager {
     // Hit detection against zombies
     if (this.zombieManager) {
       const rayOrigin = playerPos.clone().add(new THREE.Vector3(0, 1.5, 0));
-      const hit = this.zombieManager.checkRayHit(rayOrigin, forwardDir, weapon.range);
 
-      if (hit) {
-        const finalDamage = hit.isHeadshot ? weapon.damage * 2.0 : weapon.damage;
-        hit.zombie.takeDamage(finalDamage, hit.hitPoint, hit.isHeadshot);
+      if (weapon.id === 'shotgun') {
+        // Multi-pellet shotgun simulation
+        const pelletCount = weapon.pelletCount ?? 8;
+        const spread = weapon.spreadAngleRad ?? 0.075;
+        let anyHit = false;
+        let anyHeadshot = false;
+        const hitMap = new Map<ZombieAI, { damage: number; isHeadshot: boolean; hitPoint: THREE.Vector3; hitLocation: HitLocation }>();
 
-        this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 35 : 18);
-        useGameUIStore.getState().setCrosshairHit(true);
+        for (let p = 0; p < pelletCount; p++) {
+          const pelletDir = forwardDir.clone();
+          if (p > 0) {
+            pelletDir.x += (Math.random() - 0.5) * spread;
+            pelletDir.y += (Math.random() - 0.5) * (spread * 0.7);
+            pelletDir.z += (Math.random() - 0.5) * spread;
+            pelletDir.normalize();
+          }
 
-        this.eventBus.emit('weapon:hit', {
-          targetType: 'zombie',
-          damage: finalDamage,
-          isHeadshot: hit.isHeadshot,
-          position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z]
-        });
+          const hit = this.zombieManager.checkRayHit(rayOrigin, pelletDir, weapon.range);
+          if (hit) {
+            anyHit = true;
+            if (hit.isHeadshot) anyHeadshot = true;
+
+            const dmgCalc = CombatConfigManager.getInstance().calculateDamage(
+              'shotgun',
+              hit.hitLocation,
+              hit.zombie.variant,
+              true // isPellet
+            );
+
+            const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
+
+            if (!hitMap.has(hit.zombie)) {
+              hitMap.set(hit.zombie, {
+                damage: 0,
+                isHeadshot: false,
+                hitPoint: hit.hitPoint,
+                hitLocation: hit.hitLocation
+              });
+            }
+            const entry = hitMap.get(hit.zombie)!;
+            entry.damage += result.damageDealt;
+            if (hit.isHeadshot) entry.isHeadshot = true;
+            entry.hitPoint = hit.hitPoint;
+
+            this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 16 : 8);
+          }
+        }
+
+        if (anyHit) {
+          useGameUIStore.getState().setCrosshairHit(true, anyHeadshot);
+          if (anyHeadshot) {
+            this.eventBus.emit('audio:play_sfx', { sound: 'headshot_hit', volume: 1.0 });
+          }
+
+          hitMap.forEach((entry) => {
+            this.eventBus.emit('weapon:hit', {
+              targetType: 'zombie',
+              damage: entry.damage,
+              isHeadshot: entry.isHeadshot,
+              position: [entry.hitPoint.x, entry.hitPoint.y, entry.hitPoint.z]
+            });
+
+            this.eventBus.emit('combat:damage_number', {
+              amount: entry.damage,
+              position: [entry.hitPoint.x, entry.hitPoint.y, entry.hitPoint.z],
+              isHeadshot: entry.isHeadshot,
+              hitLocation: entry.hitLocation
+            });
+          });
+        }
+      } else {
+        // Single projectile / raycast weapon (pistol, rifle)
+        const hit = this.zombieManager.checkRayHit(rayOrigin, forwardDir, weapon.range);
+
+        if (hit) {
+          const dmgCalc = CombatConfigManager.getInstance().calculateDamage(
+            weapon.id,
+            hit.hitLocation,
+            hit.zombie.variant,
+            false
+          );
+
+          const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
+
+          this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 35 : 18);
+          useGameUIStore.getState().setCrosshairHit(true, hit.isHeadshot);
+
+          if (hit.isHeadshot) {
+            this.eventBus.emit('audio:play_sfx', { sound: 'headshot_hit', volume: 1.0 });
+          }
+
+          this.eventBus.emit('weapon:hit', {
+            targetType: 'zombie',
+            damage: result.damageDealt,
+            isHeadshot: hit.isHeadshot,
+            position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z]
+          });
+
+          this.eventBus.emit('combat:damage_number', {
+            amount: result.damageDealt,
+            position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z],
+            isHeadshot: hit.isHeadshot,
+            hitLocation: hit.hitLocation,
+            armorReduced: result.armorReduced
+          });
+        }
       }
     }
 
@@ -146,7 +240,7 @@ export class CombatManager {
     return true;
   }
 
-  private swingMelee(playerPos: THREE.Vector3, forwardDir: THREE.Vector3, weapon: WeaponStats): boolean {
+  private swingMelee(playerPos: THREE.Vector3, forwardDir: THREE.Vector3, weapon: ExtendedWeaponStats): boolean {
     this.eventBus.emit('audio:play_sfx', { sound: 'melee_swing', volume: 0.8 });
 
     if (this.zombieManager) {
@@ -154,11 +248,34 @@ export class CombatManager {
       const hit = this.zombieManager.checkMeleeSweep(swingOrigin, forwardDir, weapon.range, 1.2);
 
       if (hit) {
-        hit.zombie.takeDamage(weapon.damage, hit.hitPoint, false);
+        const dmgCalc = CombatConfigManager.getInstance().calculateDamage(
+          weapon.id,
+          hit.hitLocation,
+          hit.zombie.variant,
+          false
+        );
+
+        const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
+
         this.particleSystem.spawnBloodSplatter(hit.hitPoint, 15);
         this.eventBus.emit('audio:play_sfx', { sound: 'melee_hit', volume: 1.0 });
-        useGameUIStore.getState().setCrosshairHit(true);
+        useGameUIStore.getState().setCrosshairHit(true, false);
         this.cameraManager.addTrauma(0.04);
+
+        this.eventBus.emit('weapon:hit', {
+          targetType: 'zombie',
+          damage: result.damageDealt,
+          isHeadshot: false,
+          position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z]
+        });
+
+        this.eventBus.emit('combat:damage_number', {
+          amount: result.damageDealt,
+          position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z],
+          isHeadshot: false,
+          hitLocation: hit.hitLocation,
+          armorReduced: result.armorReduced
+        });
       }
     }
 

@@ -3,6 +3,16 @@ import { ZombieVariantType, ZombieState } from '@/shared/types';
 import { ZOMBIE_CONFIGS, ZombieConfig } from '@/data/zombies';
 import { ModelFactory } from '@/core/assets/ModelFactory';
 import { EventBus } from '@/core/events/EventBus';
+import { HitLocation, ARMOR_RESISTANCE_MODIFIERS } from '@/data/combat';
+
+export interface ZombieDamageResult {
+  damageDealt: number;
+  remainingHealth: number;
+  isDead: boolean;
+  isHeadshot: boolean;
+  hitLocation: HitLocation;
+  armorReduced: number;
+}
 
 export class ZombieAI {
   public readonly id: string;
@@ -12,8 +22,28 @@ export class ZombieAI {
   private modelParts: ReturnType<typeof ModelFactory.createZombieModel>;
 
   public state: ZombieState = 'idle';
-  public health: number;
+  public maxHealth: number;
+  public currentHealth: number;
   public isDead: boolean = false;
+
+  // Backward compatibility getter/setter for tests and legacy callers
+  public get health(): number {
+    return this.currentHealth;
+  }
+  public set health(val: number) {
+    this.currentHealth = Math.max(0, Math.min(this.maxHealth, val));
+    if (this.currentHealth <= 0 && !this.isDead) {
+      this.die();
+    }
+  }
+
+  public getHealth(): number {
+    return this.currentHealth;
+  }
+
+  public getMaxHealth(): number {
+    return this.maxHealth;
+  }
 
   private targetPosition: THREE.Vector3 = new THREE.Vector3();
   private patrolOrigin: THREE.Vector3;
@@ -33,9 +63,9 @@ export class ZombieAI {
   private static readonly _scratchForward: THREE.Vector3 = new THREE.Vector3(0, 0, 1);
   private static readonly _scratchEyePos: THREE.Vector3 = new THREE.Vector3();
 
-  // Collision bounding cylinder
-  public readonly hitRadius: number;
-  public readonly hitHeight: number;
+  // Collision bounding cylinder (dynamic, disabled when dead)
+  public hitRadius: number;
+  public hitHeight: number;
 
   constructor(
     id: string,
@@ -46,7 +76,8 @@ export class ZombieAI {
     this.id = id;
     this.variant = variant;
     this.config = ZOMBIE_CONFIGS[variant];
-    this.health = this.config.maxHealth;
+    this.maxHealth = this.config.maxHealth;
+    this.currentHealth = this.maxHealth;
     this.eventBus = EventBus.getInstance();
 
     this.patrolOrigin = spawnPosition.clone();
@@ -72,7 +103,8 @@ export class ZombieAI {
   }
 
   public reset(spawnPosition: THREE.Vector3): void {
-    this.health = this.config.maxHealth;
+    this.maxHealth = this.config.maxHealth;
+    this.currentHealth = this.maxHealth;
     this.isDead = false;
     this.state = 'idle';
     this.stateTimer = 3.0;
@@ -83,6 +115,10 @@ export class ZombieAI {
     this.patrolTarget.copy(spawnPosition);
     this.group.position.copy(spawnPosition);
     this.group.rotation.set(0, 0, 0);
+
+    // Restore collision bounds
+    this.hitRadius = 0.5 * this.config.scale[0];
+    this.hitHeight = 1.9 * this.config.scale[1];
 
     // Reset joint rotations
     this.modelParts.leftLeg.rotation.set(0, 0, 0);
@@ -116,27 +152,75 @@ export class ZombieAI {
     }
   }
 
-  public takeDamage(amount: number, _hitPoint: THREE.Vector3, _isHeadshot: boolean): void {
-    if (this.isDead) return;
+  public takeDamage(
+    amount: number,
+    _hitPoint: THREE.Vector3,
+    isHeadshotOrLocation: boolean | HitLocation = false
+  ): ZombieDamageResult {
+    const hitLocation: HitLocation =
+      typeof isHeadshotOrLocation === 'string'
+        ? isHeadshotOrLocation
+        : isHeadshotOrLocation
+        ? 'head'
+        : 'torso';
 
-    this.health -= amount;
+    const isHeadshot = hitLocation === 'head';
+
+    if (this.isDead) {
+      return {
+        damageDealt: 0,
+        remainingHealth: 0,
+        isDead: true,
+        isHeadshot,
+        hitLocation,
+        armorReduced: 0
+      };
+    }
+
+    // Factor in variant-specific armor resistance for this hit location
+    const armorMod = ARMOR_RESISTANCE_MODIFIERS[this.variant]?.[hitLocation] ?? 1.0;
+    const damageAfterArmor = Math.max(1, Math.round(amount * armorMod));
+    const armorReduced = Math.max(0, Math.round(amount - damageAfterArmor));
+
+    this.currentHealth = Math.max(0, this.currentHealth - damageAfterArmor);
     this.state = 'chase';
     this.damageFlinchTimer = 0.25;
 
-    if (this.health <= 0) {
+    if (this.currentHealth <= 0) {
       this.die();
+      return {
+        damageDealt: damageAfterArmor,
+        remainingHealth: 0,
+        isDead: true,
+        isHeadshot,
+        hitLocation,
+        armorReduced
+      };
     } else {
       this.stateTimer = 0.25;
       const fwd = this.getForwardVector();
       this.group.position.addScaledVector(fwd, -0.2);
       this.eventBus.emit('audio:play_sfx', { sound: 'zombie_groan', volume: 0.7 });
+      return {
+        damageDealt: damageAfterArmor,
+        remainingHealth: this.currentHealth,
+        isDead: false,
+        isHeadshot,
+        hitLocation,
+        armorReduced
+      };
     }
   }
 
   public die(): void {
     if (this.isDead) return;
     this.isDead = true;
+    this.currentHealth = 0;
     this.state = 'dead';
+    this.attackCooldownTimer = Infinity;
+    this.hitRadius = 0;
+    this.hitHeight = 0;
+
     this.eventBus.emit('audio:play_sfx', { sound: 'zombie_death', volume: 0.9 });
     this.eventBus.emit('zombie:killed', {
       id: this.id,

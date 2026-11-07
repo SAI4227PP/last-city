@@ -30,6 +30,7 @@ export interface GameUIState {
   interactionPrompt: { visible: boolean; text: string; key: string };
   subtitles: { visible: boolean; speaker: string; text: string };
   crosshairHit: boolean;
+  crosshairHeadshot: boolean;
 
   // Mission
   activeMission: {
@@ -69,7 +70,7 @@ export interface GameUIState {
   setStageBanner: (stageNum: string, stageTitle: string, durationMs?: number) => void;
   setInteractionPrompt: (prompt: { visible: boolean; text: string; key: string }) => void;
   setSubtitles: (subtitles: { visible: boolean; speaker: string; text: string }) => void;
-  setCrosshairHit: (hit: boolean) => void;
+  setCrosshairHit: (hit: boolean, isHeadshot?: boolean) => void;
   setActiveMission: (mission: { title: string; objective: string; counter?: string }) => void;
   setVitals: (vitals: VitalStats) => void;
   setWeapon: (weapon: { name: string; currentAmmo: number; reserveAmmo: number; isRanged: boolean }) => void;
@@ -105,6 +106,7 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
   interactionPrompt: { visible: false, text: '', key: 'E' },
   subtitles: { visible: false, speaker: '', text: '' },
   crosshairHit: false,
+  crosshairHeadshot: false,
 
   activeMission: {
     title: 'AWAKENING',
@@ -166,10 +168,10 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
 
   setInteractionPrompt: (interactionPrompt) => set({ interactionPrompt }),
   setSubtitles: (subtitles) => set({ subtitles }),
-  setCrosshairHit: (crosshairHit) => {
-    set({ crosshairHit });
+  setCrosshairHit: (crosshairHit, isHeadshot = false) => {
+    set({ crosshairHit, crosshairHeadshot: isHeadshot });
     if (crosshairHit) {
-      setTimeout(() => set({ crosshairHit: false }), 120);
+      setTimeout(() => set({ crosshairHit: false, crosshairHeadshot: false }), 120);
     }
   },
   setActiveMission: (activeMission) => set({ activeMission }),

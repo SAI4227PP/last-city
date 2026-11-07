@@ -88,6 +88,9 @@ export class AudioManager {
       case 'melee_hit':
         this.synthesizeThud(t, finalVolume);
         break;
+      case 'headshot_hit':
+        this.synthesizeHeadshot(t, finalVolume * 1.2);
+        break;
       case 'zombie_groan':
         this.synthesizeZombieGroan(t, finalVolume * 0.7);
         break;
@@ -363,5 +366,23 @@ export class AudioManager {
     gain.connect(this.audioCtx.destination);
     osc.start(t);
     osc.stop(t + dur);
+  }
+
+  private synthesizeHeadshot(t: number, vol: number): void {
+    if (!this.audioCtx) return;
+    const osc = this.audioCtx.createOscillator();
+    const gain = this.audioCtx.createGain();
+
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(950, t);
+    osc.frequency.exponentialRampToValueAtTime(180, t + 0.16);
+
+    gain.gain.setValueAtTime(vol * 1.2, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+
+    osc.connect(gain);
+    gain.connect(this.audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.18);
   }
 }

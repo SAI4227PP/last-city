@@ -1,69 +1,34 @@
 import { WeaponType, WeaponStats } from '@/shared/types';
+import { WEAPON_COMBAT_CONFIGS } from './combat';
 
-export const WEAPON_DEFINITIONS: Record<WeaponType, WeaponStats> = {
+export interface ExtendedWeaponStats extends WeaponStats {
+  headDamage: number;
+  headMultiplier: number;
+  pelletCount?: number;
+  pelletBodyDamage?: number;
+  pelletHeadDamage?: number;
+  spreadAngleRad?: number;
+}
+
+export const WEAPON_DEFINITIONS: Record<WeaponType, ExtendedWeaponStats> = {
   knife: {
-    id: 'knife',
-    name: 'Tactical Knife',
-    isRanged: false,
-    damage: 25,
-    fireRate: 2.2,
-    range: 2.0,
-    maxAmmo: 0,
-    currentAmmo: 0,
-    reserveAmmo: 0,
-    reloadTime: 0,
-    recoil: 0
+    ...WEAPON_COMBAT_CONFIGS.knife,
+    damage: WEAPON_COMBAT_CONFIGS.knife.bodyDamage
   },
   bat: {
-    id: 'bat',
-    name: 'Baseball Bat',
-    isRanged: false,
-    damage: 40,
-    fireRate: 1.4,
-    range: 2.4,
-    maxAmmo: 0,
-    currentAmmo: 0,
-    reserveAmmo: 0,
-    reloadTime: 0,
-    recoil: 0
+    ...WEAPON_COMBAT_CONFIGS.bat,
+    damage: WEAPON_COMBAT_CONFIGS.bat.bodyDamage
   },
   pistol: {
-    id: 'pistol',
-    name: '9mm Service Pistol',
-    isRanged: true,
-    damage: 35,
-    fireRate: 3.5,
-    range: 45,
-    maxAmmo: 12,
-    currentAmmo: 12,
-    reserveAmmo: 24,
-    reloadTime: 1.6,
-    recoil: 0.05
+    ...WEAPON_COMBAT_CONFIGS.pistol,
+    damage: WEAPON_COMBAT_CONFIGS.pistol.bodyDamage
   },
   shotgun: {
-    id: 'shotgun',
-    name: 'Pump-Action Shotgun',
-    isRanged: true,
-    damage: 90,
-    fireRate: 1.1,
-    range: 22,
-    maxAmmo: 6,
-    currentAmmo: 6,
-    reserveAmmo: 18,
-    reloadTime: 2.4,
-    recoil: 0.12
+    ...WEAPON_COMBAT_CONFIGS.shotgun,
+    damage: WEAPON_COMBAT_CONFIGS.shotgun.bodyDamage
   },
   rifle: {
-    id: 'rifle',
-    name: 'Assault Rifle M4',
-    isRanged: true,
-    damage: 42,
-    fireRate: 8.0,
-    range: 65,
-    maxAmmo: 30,
-    currentAmmo: 30,
-    reserveAmmo: 60,
-    reloadTime: 2.0,
-    recoil: 0.04
+    ...WEAPON_COMBAT_CONFIGS.rifle,
+    damage: WEAPON_COMBAT_CONFIGS.rifle.bodyDamage
   }
 };

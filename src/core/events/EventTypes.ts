@@ -22,6 +22,8 @@ export interface GameEventPayloads {
   'weapon:fire': { weapon: WeaponType; currentAmmo: number; reserveAmmo: number };
   'weapon:reload': { weapon: WeaponType };
   'weapon:hit': { targetType: 'zombie' | 'prop'; damage: number; isHeadshot: boolean; position: [number, number, number] };
+  'combat:damage_number': { amount: number; position: [number, number, number]; isHeadshot: boolean; hitLocation: string; armorReduced?: number };
+  'combat:headshot': { position: [number, number, number] };
 
   // Zombie
   'zombie:spawn': { id: string; variant: string };
