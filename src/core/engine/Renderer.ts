@@ -30,7 +30,7 @@ export class Renderer {
 
     // Apply shadow settings based on performance profile
     this.webglRenderer.shadowMap.enabled = this.currentConfig.shadows;
-    this.webglRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.webglRenderer.shadowMap.type = THREE.PCFShadowMap;
 
     this.updateSize();
     this.container.appendChild(this.webglRenderer.domElement);
