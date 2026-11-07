@@ -45,8 +45,8 @@ export class HospitalScene extends BaseScene {
   }
 
   public async init(): Promise<void> {
-    this.scene.background = new THREE.Color(0x040608);
-    this.scene.fog = new THREE.FogExp2(0x040608, 0.05);
+    this.scene.background = new THREE.Color(0x060c14);
+    this.scene.fog = new THREE.FogExp2(0x060c14, 0.018);
 
     // 1. Initialize Subsystems
     this.survivalSystem = new SurvivalSystem();
@@ -108,12 +108,30 @@ export class HospitalScene extends BaseScene {
     this.scene.add(floor);
     this.engine.physicsWorld.createStaticBox(new THREE.Vector3(0, -0.5, 20), new THREE.Vector3(15, 0.5, 30));
 
-    // Ambient light
-    const amb = new THREE.AmbientLight(0x182430, 0.8);
+    // Ambient light - Balanced visible cold hospital ambience
+    const amb = new THREE.AmbientLight(0x42586e, 1.6);
     this.scene.add(amb);
 
+    // Room 104 Overhead Fluorescent Light fixture (illuminates starting room, bed, cabinet & player)
+    const roomLight = new THREE.PointLight(0xc2e2ff, 2.6, 14, 1.2);
+    roomLight.position.set(0, 3.2, 0);
+    roomLight.castShadow = true;
+    this.scene.add(roomLight);
+
+    const roomFixture = new THREE.Mesh(
+      new THREE.BoxGeometry(1.8, 0.08, 0.35),
+      new THREE.MeshBasicMaterial({ color: 0xebf5ff })
+    );
+    roomFixture.position.set(0, 3.25, 0);
+    this.scene.add(roomFixture);
+
+    // Bedside Medical Monitor glow (eerie hospital monitor green)
+    const monitorLight = new THREE.PointLight(0x38ef7d, 1.5, 6);
+    monitorLight.position.set(-1.8, 1.4, -0.8);
+    this.scene.add(monitorLight);
+
     // Flickering fluorescent light in corridor
-    this.fluorescentLight = new THREE.PointLight(0xbfe3ff, 2.0, 15);
+    this.fluorescentLight = new THREE.PointLight(0xbfe3ff, 2.4, 20);
     this.fluorescentLight.position.set(0, 3.2, 12);
     this.fluorescentLight.castShadow = true;
     this.scene.add(this.fluorescentLight);

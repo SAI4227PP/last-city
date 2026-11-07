@@ -77,6 +77,8 @@ export class PlayerAnimationController {
       'pistol_walk',
       'pistol_run',
       'pistol_fire',
+      'sword_idle',
+      'sword_slash',
       'hit_front',
       'hit_back',
       'death_forward',
@@ -204,12 +206,23 @@ export class PlayerAnimationController {
     customFadeDuration?: number
   ): Promise<THREE.AnimationAction | null> {
     if (this.isDead || this.isDisposed) return null;
-    if (this.currentBaseId === id && this.currentBaseAction?.isRunning()) {
-      return this.currentBaseAction;
+    if (this.currentBaseId === id) {
+      if (this.currentBaseAction?.isRunning()) {
+        return this.currentBaseAction;
+      }
+      if (this.loadingPromises.has(id)) {
+        return null;
+      }
     }
+    this.currentBaseId = id;
 
     const nextAction = await this.getAction(id);
     if (!nextAction || this.isDisposed || this.isDead) return null;
+
+    // Check if another locomotion requested while we were awaiting
+    if (this.currentBaseId !== id) {
+      return null;
+    }
 
     const meta = ANIMATION_REGISTRY[id];
     const fadeDuration = customFadeDuration ?? meta.fadeDuration;

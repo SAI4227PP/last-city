@@ -45,8 +45,9 @@ export class PlayerController {
 
   // Camera offset parameters (Over-the-shoulder third person)
   private cameraYaw: number = 0;
-  private cameraPitch: number = 0.15;
-  private readonly cameraOffset: THREE.Vector3 = new THREE.Vector3(0.5, 1.8, -3.2);
+  private cameraPitch: number = 0.08;
+  private readonly cameraOffset: THREE.Vector3 = new THREE.Vector3(-0.45, 0.25, -2.3);
+  private isCameraInitialized: boolean = false;
 
   // Event unsubscriptions
   private weaponSwitchUnsub?: () => void;
@@ -98,24 +99,27 @@ export class PlayerController {
     this.group.position.copy(startPosition);
     scene.add(this.group);
 
-    // 2. Create Flashlight
+    // 2. Create Flashlight & Player Fill Light
     this.flashlightTarget = new THREE.Object3D();
     scene.add(this.flashlightTarget);
 
-    this.flashlight = new THREE.SpotLight(0xfff3db, 3.0, 30, Math.PI / 5, 0.4, 1.2);
-    this.flashlight.position.set(0.2, 1.4, 0.2);
-    this.flashlight.castShadow = true;
-    this.flashlight.shadow.mapSize.width = 1024;
-    this.flashlight.shadow.mapSize.height = 1024;
+    // Front flashlight beam mounted on right shoulder forward of the chest
+    this.flashlight = new THREE.SpotLight(0xfff3db, 3.5, 35, Math.PI / 4.2, 0.5, 1.2);
+    this.flashlight.position.set(-0.25, 1.35, 0.45);
+    this.flashlight.castShadow = false; // Prevents player's own torso/arm self-shadowing that blacks out the world
     this.flashlight.target = this.flashlightTarget;
     this.group.add(this.flashlight);
 
-    // 3. Create Rapier Physics Dynamic Capsule
+    // Subtle atmospheric character fill/rim light so the survivor silhouette and gear never black out
+    const playerRim = new THREE.PointLight(0x7892a8, 1.2, 5, 1.5);
+    playerRim.position.set(0, 1.5, -0.8);
+    this.group.add(playerRim);
+
+    // 3. Create Rapier Physics Dynamic Capsule (do not pass this.group as mesh so step() does not override position offset)
     const { body, collider } = this.physicsWorld.createDynamicCapsule(
       startPosition,
       0.65, // half height
-      0.35, // radius
-      this.group
+      0.35 // radius
     );
     this.rigidBody = body;
     this.collider = collider;
@@ -207,7 +211,14 @@ export class PlayerController {
         // Initialize animation controller with the loaded model
         this.animationController = new PlayerAnimationController(model);
         this.animationController.preloadCoreAnimations().then(() => {
-          this.animationController?.playBaseLocomotion('idle');
+          const initAnim = this.equippedWeapon === 'knife' || this.equippedWeapon === 'bat'
+            ? 'sword_idle'
+            : this.equippedWeapon === 'pistol'
+            ? 'pistol_idle'
+            : this.equippedWeapon === 'rifle'
+            ? 'rifle_idle'
+            : 'idle';
+          this.animationController?.playBaseLocomotion(initAnim);
         });
 
         // Update weapon meshes on the new model
@@ -467,27 +478,35 @@ export class PlayerController {
       this.footstepTimer = 0;
     }
 
-    // 5. Update Flashlight Target Direction without allocations
-    const forwardVec = this.getForwardVector();
-    this.flashlightTarget.position.copy(this.group.position).addScaledVector(forwardVec, 15);
-    this.flashlightTarget.position.y += 1.2;
+    // 5. Update Flashlight Target Direction with aim ray (yaw + pitch)
+    PlayerController._scratchEuler.set(this.cameraPitch, this.cameraYaw, 0, 'YXZ');
+    const aimDir = PlayerController._scratchForward.set(0, 0, 1).applyEuler(PlayerController._scratchEuler);
+    this.flashlightTarget.position.copy(this.group.position).addScaledVector(aimDir, 18);
+    this.flashlightTarget.position.y += 1.35;
 
     // 6. Update Third-Person Over-the-Shoulder Camera
     const cam = this.cameraManager.camera;
-    const camPivot = PlayerController._scratchCamPivot.copy(this.group.position).add(new THREE.Vector3(0, 1.6, 0));
+    const camPivot = PlayerController._scratchCamPivot.copy(this.group.position);
+    camPivot.y += 1.45; // Shoulder & eye level pivot
 
     // Calculate rotated camera position behind player
     const offset = PlayerController._scratchOffset.copy(this.cameraOffset);
-    PlayerController._scratchEuler.set(this.cameraPitch, this.cameraYaw, 0, 'YXZ');
     offset.applyEuler(PlayerController._scratchEuler);
 
     const desiredCamPos = PlayerController._scratchDesiredCam.copy(camPivot).add(offset);
 
-    // Smooth lerp camera
-    cam.position.lerp(desiredCamPos, dt * 16);
-    const lookAtPoint = PlayerController._scratchLookAt.copy(camPivot);
-    lookAtPoint.y += Math.sin(this.cameraPitch) * 2.0;
-    cam.lookAt(lookAtPoint);
+    // Aim target 30m down the crosshair line of sight
+    const lookAtPoint = PlayerController._scratchLookAt.copy(camPivot).addScaledVector(aimDir, 30);
+
+    // Immediate first-frame snap to prevent top-down lerp artifact, smooth follow thereafter
+    if (!this.isCameraInitialized) {
+      this.isCameraInitialized = true;
+      cam.position.copy(desiredCamPos);
+      cam.lookAt(lookAtPoint);
+    } else {
+      cam.position.lerp(desiredCamPos, Math.min(1.0, dt * 16));
+      cam.lookAt(lookAtPoint);
+    }
 
     this.cameraManager.update(dt);
   }
