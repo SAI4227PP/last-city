@@ -291,6 +291,7 @@ export class CombatManager {
     this.isReloading = true;
     this.reloadTimer = weapon.reloadTime;
     this.eventBus.emit('audio:play_sfx', { sound: 'reload', volume: 0.8 });
+    this.eventBus.emit('weapon:reload', { weapon: this.equippedWeapon });
   }
 
   public update(dt: number): void {
