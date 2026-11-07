@@ -1,5 +1,12 @@
 # LAST CITY — Changelog
 
+## [1.1.1] - Physics WASM Asynchrony Hardening
+- **Deferred Rapier Initialization**:
+  - Resolved `TypeError: Cannot read properties of undefined (reading 'rawintegrationparameters_new')` by eliminating synchronous constructor execution of `new RAPIER.World()` prior to WASM compilation.
+  - Implemented async `PhysicsWorld.initWorld()` singleton promise pattern.
+  - Updated `SceneManager` to automatically await `physicsWorld.initWorld()` during the interactive loading screen when entering gameplay stages (`HospitalScene`, `CityEscapeScene`, `OpenSurvivalScene`).
+  - Added null-safe guards across `PhysicsWorld.step()`, `createStaticBox()`, `createDynamicCapsule()`, `castRay()`, `removeRigidBody()`, and `clearBodies()`.
+
 ## [1.1.0] - Cross-Device Performance Optimization & Adaptive Engine
 - **Bundle Size Optimization**:
   - Configured Vite manual chunks: separated `vendor-three`, `vendor-physics` (Rapier 3D WASM), and `vendor-ui-core`.
