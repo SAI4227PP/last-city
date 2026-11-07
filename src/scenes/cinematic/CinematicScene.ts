@@ -5,6 +5,7 @@ import { GameEngine } from '@/core/engine/GameEngine';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { AudioManager } from '@/core/audio/AudioManager';
 import { SaveManager } from '@/persistence/SaveManager';
+import { ModelFactory, ZombieModelParts } from '@/core/assets/ModelFactory';
 
 interface CinematicAct {
   startTime: number;
@@ -22,6 +23,7 @@ export class CinematicScene extends BaseScene {
   private elapsedTime: number = 0;
   private isSkipped: boolean = false;
   private emergencyLight!: THREE.PointLight;
+  private cinematicZombies: Array<{ parts: ZombieModelParts; strideTimer: number; speed: number }> = [];
 
   private acts: CinematicAct[] = [
     {
@@ -104,6 +106,25 @@ export class CinematicScene extends BaseScene {
     const amb = new THREE.AmbientLight(0x0d141e, 1.5);
     this.scene.add(amb);
 
+    // Cinematic background infected silhouettes prowling the street
+    const z1 = ModelFactory.createZombieModel('walker');
+    z1.root.position.set(-2.5, 0, 2);
+    z1.root.rotation.y = 0.4;
+    this.scene.add(z1.root);
+    this.cinematicZombies.push({ parts: z1, strideTimer: 0, speed: 4.5 });
+
+    const z2 = ModelFactory.createZombieModel('runner');
+    z2.root.position.set(3.5, 0, 8);
+    z2.root.rotation.y = -0.5;
+    this.scene.add(z2.root);
+    this.cinematicZombies.push({ parts: z2, strideTimer: 1.2, speed: 9.0 });
+
+    const z3 = ModelFactory.createZombieModel('walker');
+    z3.root.position.set(0.5, 0, -4);
+    z3.root.rotation.y = Math.PI;
+    this.scene.add(z3.root);
+    this.cinematicZombies.push({ parts: z3, strideTimer: 2.5, speed: 5.0 });
+
     AudioManager.getInstance().startAmbience('city');
 
     // Setup skip listener on Escape key
@@ -164,6 +185,19 @@ export class CinematicScene extends BaseScene {
     // Emergency beacon pulse
     this.emergencyLight.intensity = Math.sin(this.elapsedTime * 6) > 0 ? 3.5 : 0.5;
 
+    // Animate cinematic background infected
+    this.cinematicZombies.forEach((cz) => {
+      cz.strideTimer += dt * cz.speed;
+      const cycle = Math.sin(cz.strideTimer);
+      cz.parts.leftLeg.rotation.x = cycle * 0.45;
+      cz.parts.rightLeg.rotation.x = -cycle * 0.45;
+      cz.parts.leftArm.rotation.x = -Math.PI / 3 + Math.sin(cz.strideTimer) * 0.3;
+      cz.parts.rightArm.rotation.x = -Math.PI / 3 - Math.sin(cz.strideTimer) * 0.3;
+      if (cz.parts.leftKnee) cz.parts.leftKnee.rotation.x = Math.max(0, cycle) * 0.6;
+      if (cz.parts.rightKnee) cz.parts.rightKnee.rotation.x = Math.max(0, -cycle) * 0.6;
+      if (cz.parts.jaw) cz.parts.jaw.rotation.x = 0.25 + Math.sin(cz.strideTimer * 2) * 0.15;
+    });
+
     // Evaluate current act
     const act = this.acts.find((a) => this.elapsedTime >= a.startTime && this.elapsedTime < a.endTime);
     if (act) {
@@ -183,6 +217,7 @@ export class CinematicScene extends BaseScene {
   public fixedUpdate(): void {}
 
   public dispose(): void {
+    this.cinematicZombies = [];
     while (this.scene.children.length > 0) {
       const obj = this.scene.children[0];
       this.scene.remove(obj);

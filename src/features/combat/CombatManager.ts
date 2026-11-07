@@ -98,6 +98,13 @@ export class CombatManager {
     const sfx = weapon.id === 'shotgun' ? 'gunshot_shotgun' : weapon.id === 'rifle' ? 'gunshot_rifle' : 'gunshot_pistol';
     this.eventBus.emit('audio:play_sfx', { sound: sfx, volume: 1.0 });
 
+    // Emit weapon fire event for UI, audio, and player recoil animation
+    this.eventBus.emit('weapon:fire', {
+      weapon: weapon.id,
+      currentAmmo: weapon.currentAmmo,
+      reserveAmmo: weapon.reserveAmmo
+    });
+
     // Camera recoil & screen trauma
     this.cameraManager.addTrauma(weapon.recoil);
 
