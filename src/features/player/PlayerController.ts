@@ -354,6 +354,7 @@ export class PlayerController {
     if (this.isDead) {
       this.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
       this.animationController?.update(dt);
+      this.cameraManager.update(dt);
       return;
     }
 

@@ -61,7 +61,9 @@ describe('Zombie AI Distance Throttling & Line of Sight Occlusion', () => {
     // 3. Attack through wall test (place player in attack range: 1.2m away)
     const attackPlayerPos = new THREE.Vector3(0, 0, 3.8); // dist = 1.2m <= attackRange (1.6m)
     zombie.state = 'attack';
+    (zombie as any).stateTimer = 0.45; // At swing apex
     (zombie as any).attackCooldownTimer = 0;
+    (zombie as any).hasDealtAttackDamage = false;
     let attackDamageApplied = 0;
 
     // Try to attack while wall is in between
@@ -70,6 +72,7 @@ describe('Zombie AI Distance Throttling & Line of Sight Occlusion', () => {
 
     // Attack with clear line of sight
     (zombie as any).attackCooldownTimer = 0;
+    (zombie as any).hasDealtAttackDamage = false;
     zombie.update(0.016, attackPlayerPos, (dmg) => { attackDamageApplied += dmg; }, clearView);
     expect(attackDamageApplied).toBeGreaterThan(0); // Attack lands!
   });

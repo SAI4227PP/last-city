@@ -308,7 +308,9 @@ describe('Zombie Health, Weapon Damage and Combat System Audit', () => {
 
     // Zombie updates in melee attack range with clear line of sight
     walker.state = 'attack';
+    (walker as any).stateTimer = 0.45; // At swing apex
     (walker as any).attackCooldownTimer = 0;
+    (walker as any).hasDealtAttackDamage = false;
 
     zombieManager.update(0.016, playerPos, undefined, false);
 
@@ -331,11 +333,15 @@ describe('Zombie Health, Weapon Damage and Combat System Audit', () => {
 
     // 1st hit: 100 -> 65
     brute.state = 'attack';
+    (brute as any).stateTimer = 0.45; // At swing apex
     (brute as any).attackCooldownTimer = 0;
+    (brute as any).hasDealtAttackDamage = false;
     zombieManager.update(0.016, playerPos, undefined, false);
     expect(survival.getVitals().health).toBe(65);
 
     // 2nd hit: 65 -> 30
+    brute.state = 'attack';
+    (brute as any).stateTimer = 0.45; // At swing apex
     (brute as any).attackCooldownTimer = 0;
     (brute as any).hasDealtAttackDamage = false;
     (survival as any).damageCooldownTimer = 0;
@@ -343,6 +349,8 @@ describe('Zombie Health, Weapon Damage and Combat System Audit', () => {
     expect(survival.getVitals().health).toBe(30);
 
     // 3rd hit: 30 -> 0 (death!)
+    brute.state = 'attack';
+    (brute as any).stateTimer = 0.45; // At swing apex
     (brute as any).attackCooldownTimer = 0;
     (brute as any).hasDealtAttackDamage = false;
     (survival as any).damageCooldownTimer = 0;

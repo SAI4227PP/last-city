@@ -15,6 +15,7 @@ export class SurvivalSystem {
   private eventBus: EventBus;
   private heartbeatTimer: number = 0;
   private damageCooldownTimer: number = 0;
+  private starvationTimer: number = 0;
 
   constructor() {
     this.eventBus = EventBus.getInstance();
@@ -36,11 +37,14 @@ export class SurvivalSystem {
     if (checkCooldown && this.damageCooldownTimer > 0) return;
 
     if (checkCooldown) {
-      this.damageCooldownTimer = 0.12; // 120ms brief frame-safety invulnerability window
+      this.damageCooldownTimer = 0.18; // Brief 180ms frame-safety debouncing window
     }
 
+    const prev = this.vitals.health;
     this.vitals.health = Math.max(0, this.vitals.health - amount);
-    this.eventBus.emit('player:damage', { amount, source });
+    const actualDamage = prev - this.vitals.health;
+
+    this.eventBus.emit('player:damage', { amount: actualDamage, source });
     this.eventBus.emit('audio:play_sfx', { sound: 'melee_hit', volume: 1.0 });
     this.eventBus.emit('audio:play_sfx', { sound: 'heartbeat', volume: 0.9 });
     this.syncToStore();
@@ -93,9 +97,15 @@ export class SurvivalSystem {
     this.vitals.hunger = Math.max(0, this.vitals.hunger - 0.12 * dt);
     this.vitals.thirst = Math.max(0, this.vitals.thirst - 0.20 * dt);
 
-    // Starvation / Dehydration penalties
+    // Starvation / Dehydration penalties on dedicated interval without blocking combat damage
     if (this.vitals.hunger <= 0 || this.vitals.thirst <= 0) {
-      this.damage(1.5 * dt, 'Dehydration/Starvation', true);
+      this.starvationTimer += dt;
+      if (this.starvationTimer >= 1.0) {
+        this.starvationTimer = 0;
+        this.damage(2.0, 'Dehydration/Starvation', false);
+      }
+    } else {
+      this.starvationTimer = 0;
     }
 
     this.damageCooldownTimer = Math.max(0, this.damageCooldownTimer - dt);

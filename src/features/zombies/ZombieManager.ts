@@ -114,8 +114,8 @@ export class ZombieManager {
             ZombieManager._scratchRayDir.divideScalar(distToHit);
             const wallHit = this.physicsWorld.raycast(rayOrigin, ZombieManager._scratchRayDir, distToHit, true);
             const isPlayer = !!(
-              (this.playerBody && wallHit?.rigidBody === this.playerBody) ||
-              (this.playerCollider && wallHit?.collider === this.playerCollider)
+              (this.playerBody && (wallHit?.rigidBody === this.playerBody || wallHit?.rigidBody?.handle === this.playerBody.handle)) ||
+              (this.playerCollider && (wallHit?.collider === this.playerCollider || wallHit?.collider?.handle === this.playerCollider.handle))
             );
             if (wallHit && !isPlayer && wallHit.distance > 0.45 && wallHit.distance < distToHit - 0.25) {
               // Obstructed by solid environment obstacle
@@ -162,8 +162,8 @@ export class ZombieManager {
             ZombieManager._scratchToZombie.divideScalar(distToPoint);
             const wallHit = this.physicsWorld.raycast(sweepOrigin, ZombieManager._scratchToZombie, distToPoint, true);
             const isPlayer = !!(
-              (this.playerBody && wallHit?.rigidBody === this.playerBody) ||
-              (this.playerCollider && wallHit?.collider === this.playerCollider)
+              (this.playerBody && (wallHit?.rigidBody === this.playerBody || wallHit?.rigidBody?.handle === this.playerBody.handle)) ||
+              (this.playerCollider && (wallHit?.collider === this.playerCollider || wallHit?.collider?.handle === this.playerCollider.handle))
             );
             if (wallHit && !isPlayer && wallHit.distance > 0.45 && wallHit.distance < distToPoint - 0.25) {
               // Blocked by wall
@@ -203,8 +203,8 @@ export class ZombieManager {
     if (!hit) return true;
 
     // If the ray directly hit the player's own physics body or collider, line of sight is clear
-    if (this.playerBody && hit.rigidBody === this.playerBody) return true;
-    if (this.playerCollider && hit.collider === this.playerCollider) return true;
+    if (this.playerBody && (hit.rigidBody === this.playerBody || hit.rigidBody?.handle === this.playerBody.handle)) return true;
+    if (this.playerCollider && (hit.collider === this.playerCollider || hit.collider?.handle === this.playerCollider.handle)) return true;
 
     // If raycast hit an obstacle closer than the target player (with margin for player capsule radius)
     if (hit.distance < dist - 0.75) {
@@ -227,7 +227,7 @@ export class ZombieManager {
         dt,
         playerPos,
         (dmg) => {
-          this.survivalSystem.damage(dmg, zombie.config.name, true);
+          this.survivalSystem.damage(dmg, zombie.config.name, false);
         },
         boundLos,
         camera,

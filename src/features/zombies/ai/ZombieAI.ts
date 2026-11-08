@@ -795,32 +795,23 @@ export class ZombieAI {
         this.stateTimer -= dt;
         this.lookAt(playerPos);
 
-        if (this.animationController) {
-          this.animationController.triggerAttack();
-        }
-
-        // Apply attack damage once per swing if cooldown is ready and player is within reach
-        if (this.attackCooldownTimer <= 0 && !this.hasDealtAttackDamage) {
-          if (distToPlayer <= this.config.attackRange + 0.6 && canSeePlayer()) {
+        // Apply attack damage once per swing at apex moment (~0.40s into 0.9s swing, when stateTimer <= 0.50)
+        if (!this.hasDealtAttackDamage && this.stateTimer <= 0.50) {
+          if (distToPlayer <= this.config.attackRange + 0.75 && (distToPlayer <= 0.9 || canSeePlayer())) {
             this.hasDealtAttackDamage = true;
-            this.attackCooldownTimer = this.config.attackCooldown;
             onAttackPlayer(this.config.attackDamage);
             this.eventBus.emit('audio:play_sfx', { sound: 'zombie_attack', volume: 0.95 });
+          } else {
+            // Player moved out of range or line-of-sight was obstructed before swing apex
+            this.hasDealtAttackDamage = true;
           }
         }
 
         if (this.stateTimer <= 0) {
           this.hasDealtAttackDamage = false;
-          if (distToPlayer <= this.config.attackRange && this.attackCooldownTimer <= 0) {
-            this.state = 'attack';
-            this.stateTimer = 0.9;
-            if (this.animationController) {
-              this.animationController.triggerAttack();
-            }
-          } else {
-            this.state = 'chase';
-            this.stateTimer = 0;
-          }
+          this.attackCooldownTimer = this.config.attackCooldown;
+          this.state = 'chase';
+          this.stateTimer = 0;
         }
         break;
     }
@@ -828,9 +819,13 @@ export class ZombieAI {
     // 2. Animate Limbs or Skeletal Controller
     if (this.animationController) {
       if (this.state === 'attack') {
-        this.animationController.triggerAttack();
+        // Triggered upon entering attack state to prevent frame-by-frame animation reset
       } else if (this.state === 'chase') {
-        this.animationController.playLocomotion('run');
+        if (distToPlayer <= this.config.attackRange && this.attackCooldownTimer > 0) {
+          this.animationController.playLocomotion('walk');
+        } else {
+          this.animationController.playLocomotion('run');
+        }
       } else if (this.state === 'patrol' || this.state === 'investigate') {
         this.animationController.playLocomotion('walk');
       } else {
