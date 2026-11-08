@@ -129,14 +129,14 @@ describe('Player Character Loading & Demo Mannequin Elimination', () => {
     expect(weaponR).toBeDefined();
     expect(weaponR!.children.length).toBeGreaterThan(0);
 
-    // Switch to rifle: rifle meshes must become visible, WeaponR prop removed
+    // Switch to rifle: authoritative 3D rifle model attached to WeaponR bone, embedded low-res rifle meshes stay hidden
     player.attachWeaponMesh('rifle');
-    expect(rifle1.visible).toBe(true);
-    expect(rifle2.visible).toBe(true);
-    expect(rifle3.visible).toBe(true);
-    expect(weaponR!.children.length).toBe(0);
+    expect(rifle1.visible).toBe(false);
+    expect(rifle2.visible).toBe(false);
+    expect(rifle3.visible).toBe(false);
+    expect(weaponR!.children.length).toBeGreaterThan(0);
 
-    // Switch back to knife: rifle meshes hidden, knife prop restored
+    // Switch back to knife: knife prop attached to WeaponR, embedded rifle meshes stay hidden
     player.attachWeaponMesh('knife');
     expect(rifle1.visible).toBe(false);
     expect(weaponR!.children.length).toBeGreaterThan(0);

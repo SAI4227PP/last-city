@@ -7,6 +7,7 @@ import { ModelFactory } from '@/core/assets/ModelFactory';
 import { EventBus } from '@/core/events/EventBus';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { WeaponType } from '@/shared/types';
+import { WeaponAssetPool } from '@/features/combat/WeaponAssetPool';
 import { MathUtils } from '@/core/utils/MathUtils';
 import { PlayerAnimationController } from './PlayerAnimationController';
 import { PlayerAssetPool } from './PlayerAssetPool';
@@ -319,11 +320,9 @@ export class PlayerController {
 
   private updateWeaponMeshes(weapon: WeaponType): void {
     if (this.athleticModel) {
-      const isRifle = weapon === 'rifle';
-
-      // Toggle built-in rifle meshes
+      // Hide built-in low-res character rifle meshes so authoritative 3D models attach with full visual fidelity
       for (const mesh of this.rifleMeshes) {
-        mesh.visible = isRifle;
+        mesh.visible = false;
       }
 
       // Detach any existing prop attached to WeaponR bone
@@ -334,10 +333,9 @@ export class PlayerController {
         this.currentWeaponMesh = undefined;
       }
 
-      // If not rifle, attach custom weapon model to WeaponR bone
-      if (!isRifle && this.weaponRBone) {
-        this.currentWeaponMesh = ModelFactory.createWeaponMesh(weapon);
-        this.currentWeaponMesh.position.set(0, 0, 0);
+      // Attach authoritative weapon 3D model from WeaponAssetPool to WeaponR bone
+      if (this.weaponRBone) {
+        this.currentWeaponMesh = WeaponAssetPool.getInstance().createWeaponHandMesh(weapon);
         this.weaponRBone.add(this.currentWeaponMesh);
       }
     } else if (this.modelParts) {
@@ -345,7 +343,7 @@ export class PlayerController {
       if (this.currentWeaponMesh) {
         this.modelParts.weaponSocket.remove(this.currentWeaponMesh);
       }
-      this.currentWeaponMesh = ModelFactory.createWeaponMesh(weapon);
+      this.currentWeaponMesh = WeaponAssetPool.getInstance().createWeaponHandMesh(weapon);
       this.modelParts.weaponSocket.add(this.currentWeaponMesh);
     }
   }

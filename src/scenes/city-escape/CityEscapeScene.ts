@@ -14,6 +14,8 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { AudioManager } from '@/core/audio/AudioManager';
 import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { EventBus } from '@/core/events/EventBus';
+import { WeaponLootManager } from '@/features/loot/WeaponLootManager';
+import { WeaponAssetPool } from '@/features/combat/WeaponAssetPool';
 
 interface Interactable {
   id: string;
@@ -33,6 +35,7 @@ export class CityEscapeScene extends BaseScene {
   public zombieManager!: ZombieManager;
   public missionManager!: MissionManager;
   public particleSystem!: ParticleSystem;
+  public lootManager!: WeaponLootManager;
 
   private interactables: Interactable[] = [];
   private currentInteractable: Interactable | null = null;
@@ -72,21 +75,42 @@ export class CityEscapeScene extends BaseScene {
     await this.player.init();
     this.zombieManager.setPlayer(this.player);
 
-    // Equip knife
+    // Equip knife & pistol
     this.inventoryManager.addItem('item_knife', 1);
+    this.inventoryManager.addItem('ammo_9mm', 30);
     this.combatManager.unlockWeapon('knife');
+    this.combatManager.unlockWeapon('pistol', 15, 30);
 
-    // 4. Setup Missions
+    // 4. Preload Weapon Assets & Setup Weapon Loot Manager
+    await WeaponAssetPool.getInstance().preloadAll();
+    this.lootManager = new WeaponLootManager(
+      this.scene,
+      this.combatManager,
+      this.inventoryManager,
+      this.engine.physicsWorld
+    );
+
+    // Initial tactical weapon drops on Veridia Boulevard
+    // Tactical Shotgun near police vehicle
+    this.lootManager.spawnWeaponDrop('shotgun', new THREE.Vector3(4, 0.4, 15), 8, 16, 'city_police_shotgun');
+    // High-Precision Sniper Rifle near barricaded observation post
+    this.lootManager.spawnWeaponDrop('sniper', new THREE.Vector3(-3.5, 0.4, 48), 5, 15, 'city_sniper_nest');
+
+    // 5. Setup Missions
     this.missionManager.startStageMissions('city-escape');
 
-    // 5. Spawn Zombie Groups along the ruined avenue
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-3, 0, 18));
-    this.zombieManager.spawnZombie('runner', new THREE.Vector3(4, 0, 26));
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(2, 0, 42));
-    this.zombieManager.spawnZombie('brute', new THREE.Vector3(0, 0, 54));
+    // 6. Spawn Zombie Groups along the ruined avenue (diverse models across both asset folders)
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-3, 0, 18), 'zombie1');
+    this.zombieManager.spawnZombie('runner', new THREE.Vector3(4, 0, 26), 'patient');
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(2, 0, 42), 'zombie1');
+    this.zombieManager.spawnZombie('brute', new THREE.Vector3(0, 0, 54), 'zombie2');
 
-    // 6. Connect Input Actions
+    // 7. Connect Input Actions
     this.engine.inputManager.onInteractPressed = () => {
+      // Prioritize picking up 3D dropped weapon if near one
+      if (this.lootManager.tryPickup(this.player.getPosition())) {
+        return;
+      }
       if (this.currentInteractable) {
         this.currentInteractable.onInteract();
       }
@@ -359,6 +383,9 @@ export class CityEscapeScene extends BaseScene {
         key: 'E'
       });
     }
+
+    // 7. Update Loot Drops (proximity prompt updates if standing near dropped weapon)
+    this.lootManager.update(dt, playerPos);
   }
 
   public fixedUpdate(fixedDelta: number): void {
@@ -369,6 +396,7 @@ export class CityEscapeScene extends BaseScene {
     this.player.dispose();
     this.zombieManager.dispose();
     this.combatManager.dispose();
+    this.lootManager.dispose();
     this.particleSystem.dispose();
     useGameUIStore.getState().setInteractionPrompt({ visible: false, text: '', key: 'E' });
     AudioManager.getInstance().stopAmbience();

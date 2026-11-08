@@ -1,4 +1,4 @@
-import { ZombieVariantType } from '@/shared/types';
+import { ZombieVariantType, ZombieModelType } from '@/shared/types';
 import { ARMOR_RESISTANCE_MODIFIERS, HitLocation } from './combat';
 
 export interface ZombieHitboxConfig {
@@ -12,6 +12,7 @@ export interface ZombieHitboxConfig {
 
 export interface ZombieConfig {
   variant: ZombieVariantType;
+  modelType: ZombieModelType;
   name: string;
   maxHealth: number;
   walkSpeed: number;
@@ -30,6 +31,7 @@ export interface ZombieConfig {
 export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   walker: {
     variant: 'walker',
+    modelType: 'zombie1',
     name: 'Infected Shambler',
     maxHealth: 100,
     walkSpeed: 1.8,
@@ -53,6 +55,7 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   },
   runner: {
     variant: 'runner',
+    modelType: 'patient',
     name: 'Feral Runner',
     maxHealth: 80,
     walkSpeed: 2.5,
@@ -76,6 +79,7 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   },
   brute: {
     variant: 'brute',
+    modelType: 'zombie2',
     name: 'Armored Brute',
     maxHealth: 250,
     walkSpeed: 1.3,
@@ -99,6 +103,7 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   },
   spitter: {
     variant: 'spitter',
+    modelType: 'zombie1',
     name: 'Toxic Spitter',
     maxHealth: 120,
     walkSpeed: 1.6,
@@ -122,6 +127,7 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
   },
   boss: {
     variant: 'boss',
+    modelType: 'zombie2',
     name: 'Patient Zero Abomination',
     maxHealth: 600,
     walkSpeed: 1.8,

@@ -1,4 +1,4 @@
-import { WeaponType, ZombieVariantType } from '@/shared/types';
+import { WeaponType, WeaponRarity, ZombieVariantType } from '@/shared/types';
 
 export type CombatDifficulty = 'easy' | 'normal' | 'hard';
 export type HitLocation = 'head' | 'torso' | 'arms' | 'legs';
@@ -62,11 +62,13 @@ export interface WeaponCombatData {
   headMultiplier: number;
   fireRate: number; // shots/swings per second
   range: number;
-  maxAmmo: number;
+  maxAmmo: number;        // Magazine capacity
+  maxReserveAmmo: number; // Maximum reserve ammunition capacity
   currentAmmo: number;
   reserveAmmo: number;
   reloadTime: number;
   recoil: number;
+  rarity?: WeaponRarity;
   pelletCount?: number;
   pelletBodyDamage?: number;
   pelletHeadDamage?: number;
@@ -84,10 +86,12 @@ export const WEAPON_COMBAT_CONFIGS: Record<WeaponType, WeaponCombatData> = {
     fireRate: 2.2,
     range: 2.0,
     maxAmmo: 0,
+    maxReserveAmmo: 0,
     currentAmmo: 0,
     reserveAmmo: 0,
     reloadTime: 0,
-    recoil: 0
+    recoil: 0,
+    rarity: 'common'
   },
   bat: {
     id: 'bat',
@@ -99,10 +103,12 @@ export const WEAPON_COMBAT_CONFIGS: Record<WeaponType, WeaponCombatData> = {
     fireRate: 1.4,
     range: 2.4,
     maxAmmo: 0,
+    maxReserveAmmo: 0,
     currentAmmo: 0,
     reserveAmmo: 0,
     reloadTime: 0,
-    recoil: 0
+    recoil: 0,
+    rarity: 'common'
   },
   pistol: {
     id: 'pistol',
@@ -113,11 +119,13 @@ export const WEAPON_COMBAT_CONFIGS: Record<WeaponType, WeaponCombatData> = {
     headMultiplier: 3.0,
     fireRate: 3.5,
     range: 45,
-    maxAmmo: 12,
-    currentAmmo: 12,
-    reserveAmmo: 24,
+    maxAmmo: 15,
+    maxReserveAmmo: 150,
+    currentAmmo: 15,
+    reserveAmmo: 30,
     reloadTime: 1.6,
-    recoil: 0.05
+    recoil: 0.05,
+    rarity: 'common'
   },
   shotgun: {
     id: 'shotgun',
@@ -133,10 +141,12 @@ export const WEAPON_COMBAT_CONFIGS: Record<WeaponType, WeaponCombatData> = {
     pelletHeadDamage: 20,  // 8 pellets x 20 = 160 total
     spreadAngleRad: 0.075, // ~4.3 degree spread cone
     maxAmmo: 6,
+    maxReserveAmmo: 48,
     currentAmmo: 6,
     reserveAmmo: 18,
     reloadTime: 2.4,
-    recoil: 0.12
+    recoil: 0.12,
+    rarity: 'uncommon'
   },
   rifle: {
     id: 'rifle',
@@ -145,14 +155,82 @@ export const WEAPON_COMBAT_CONFIGS: Record<WeaponType, WeaponCombatData> = {
     bodyDamage: 30,
     headDamage: 90,
     headMultiplier: 3.0,
-    fireRate: 8.0,
+    fireRate: 8.5,
     range: 65,
     maxAmmo: 30,
+    maxReserveAmmo: 180,
     currentAmmo: 30,
     reserveAmmo: 60,
     reloadTime: 2.0,
-    recoil: 0.04
+    recoil: 0.04,
+    rarity: 'rare'
+  },
+  sniper: {
+    id: 'sniper',
+    name: 'Barrett .50 High-Caliber Sniper',
+    isRanged: true,
+    bodyDamage: 120,
+    headDamage: 360,
+    headMultiplier: 3.0,
+    fireRate: 0.85,
+    range: 120,
+    maxAmmo: 5,
+    maxReserveAmmo: 30,
+    currentAmmo: 5,
+    reserveAmmo: 15,
+    reloadTime: 2.6,
+    recoil: 0.20,
+    rarity: 'epic'
+  },
+  machinegun: {
+    id: 'machinegun',
+    name: 'M249 Heavy Machine Gun',
+    isRanged: true,
+    bodyDamage: 36,
+    headDamage: 108,
+    headMultiplier: 3.0,
+    fireRate: 11.0,
+    range: 75,
+    maxAmmo: 100,
+    maxReserveAmmo: 300,
+    currentAmmo: 100,
+    reserveAmmo: 150,
+    reloadTime: 3.2,
+    recoil: 0.065,
+    rarity: 'legendary'
   }
+};
+
+/**
+ * Centralized ammunition capacity limits configuration.
+ */
+export const WEAPON_AMMO_CAPACITIES: Record<WeaponType, { magazineCapacity: number; maxReserveAmmo: number }> = {
+  knife: { magazineCapacity: 0, maxReserveAmmo: 0 },
+  bat: { magazineCapacity: 0, maxReserveAmmo: 0 },
+  pistol: { magazineCapacity: 15, maxReserveAmmo: 150 },
+  shotgun: { magazineCapacity: 6, maxReserveAmmo: 48 },
+  rifle: { magazineCapacity: 30, maxReserveAmmo: 180 },
+  sniper: { magazineCapacity: 5, maxReserveAmmo: 30 },
+  machinegun: { magazineCapacity: 100, maxReserveAmmo: 300 }
+};
+
+export const WEAPON_AMMO_ITEM_MAP: Record<WeaponType, string> = {
+  knife: '',
+  bat: '',
+  pistol: 'ammo_9mm',
+  shotgun: 'ammo_shotgun',
+  rifle: 'ammo_rifle',
+  sniper: 'ammo_sniper',
+  machinegun: 'ammo_machinegun'
+};
+
+export const AMMO_ITEM_TO_WEAPON_MAP: Record<string, WeaponType> = {
+  ammo_9mm: 'pistol',
+  item_ammo_9mm: 'pistol',
+  ammo_shotgun: 'shotgun',
+  ammo_rifle: 'rifle',
+  ammo_sniper: 'sniper',
+  ammo_machinegun: 'machinegun'
 };
 
 export class CombatConfigManager {

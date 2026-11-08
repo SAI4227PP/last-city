@@ -76,6 +76,12 @@ export class AudioManager {
       case 'gunshot_rifle':
         this.synthesizeGunshot(t, finalVolume * 0.9, 0.12, 600, 50);
         break;
+      case 'gunshot_sniper':
+        this.synthesizeGunshot(t, finalVolume * 1.45, 0.42, 540, 20);
+        break;
+      case 'gunshot_machinegun':
+        this.synthesizeGunshot(t, finalVolume * 1.15, 0.10, 390, 45);
+        break;
       case 'reload':
         this.synthesizeClick(t, finalVolume * 0.7, 800, 0.05);
         setTimeout(() => {

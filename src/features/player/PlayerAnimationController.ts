@@ -329,13 +329,16 @@ export class PlayerAnimationController {
     }
 
     // 2. Stationary stance
+    const isLongGun = weapon === 'rifle' || weapon === 'shotgun' || weapon === 'sniper' || weapon === 'machinegun';
+    const isPistol = weapon === 'pistol';
+
     if (!isMoving) {
-      if (weapon === 'rifle') {
+      if (isLongGun) {
         if (isCrouching) return 'rifle_crouch_aim';
         if (isAiming) return 'rifle_aim';
         return 'rifle_idle';
       }
-      if (weapon === 'pistol') {
+      if (isPistol) {
         if (isAiming) return 'pistol_aim';
         return 'pistol_idle';
       }
@@ -347,7 +350,7 @@ export class PlayerAnimationController {
 
     // 3. Backward movement (moveAxis.y < -0.3)
     if (moveAxis.y < -0.3) {
-      if (weapon === 'rifle') return 'rifle_walk_back';
+      if (isLongGun) return 'rifle_walk_back';
       return 'walk_back';
     }
 
@@ -355,26 +358,26 @@ export class PlayerAnimationController {
     if (Math.abs(moveAxis.x) > Math.abs(moveAxis.y) + 0.1) {
       if (moveAxis.x < -0.3) {
         // Strafing left
-        if (weapon === 'rifle') return 'rifle_strafe_left';
-        if (weapon === 'pistol') return 'pistol_strafe_left';
+        if (isLongGun) return 'rifle_strafe_left';
+        if (isPistol) return 'pistol_strafe_left';
         return 'strafe_left';
       }
       if (moveAxis.x > 0.3) {
         // Strafing right
-        if (weapon === 'rifle') return 'rifle_strafe_right';
-        if (weapon === 'pistol') return 'pistol_strafe_right';
+        if (isLongGun) return 'rifle_strafe_right';
+        if (isPistol) return 'pistol_strafe_right';
         return 'strafe_right';
       }
     }
 
     // 5. Forward movement
-    if (weapon === 'rifle') {
+    if (isLongGun) {
       if (isCrouching) return 'rifle_crouch_walk';
       if (isSprinting) return 'rifle_sprint';
       return 'rifle_walk';
     }
 
-    if (weapon === 'pistol') {
+    if (isPistol) {
       if (isSprinting) return 'pistol_sprint';
       return 'pistol_run';
     }
@@ -399,7 +402,9 @@ export class PlayerAnimationController {
    * Gameplay Event: Weapon fire
    */
   public triggerFire(weapon: WeaponType): Promise<THREE.AnimationAction | null> {
-    if (weapon === 'rifle') {
+    if (weapon === 'rifle' || weapon === 'machinegun') {
+      return this.playAction('rifle_fire_auto', ActionPriority.Action, 0.04);
+    } else if (weapon === 'shotgun' || weapon === 'sniper') {
       return this.playAction('rifle_fire', ActionPriority.Action, 0.04);
     } else if (weapon === 'pistol') {
       return this.playAction('pistol_fire', ActionPriority.Action, 0.04);
@@ -414,12 +419,10 @@ export class PlayerAnimationController {
    * Gameplay Event: Weapon reload
    */
   public triggerReload(weapon: WeaponType): Promise<THREE.AnimationAction | null> {
-    if (weapon === 'rifle' || weapon === 'shotgun') {
-      return this.playAction('rifle_reload', ActionPriority.Action, 0.15);
-    } else if (weapon === 'pistol') {
-      return this.playAction('rifle_reload', ActionPriority.Action, 0.15);
+    if (weapon === 'knife' || weapon === 'bat') {
+      return Promise.resolve(null);
     }
-    return Promise.resolve(null);
+    return this.playAction('rifle_reload', ActionPriority.Action, 0.15);
   }
 
   /**

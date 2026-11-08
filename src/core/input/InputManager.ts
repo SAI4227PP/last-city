@@ -222,6 +222,11 @@ export class InputManager {
         this.onWeaponSlotPressed?.(5);
         EventBus.getInstance().emit('weapon:select_slot', { slot: 5 });
         break;
+      case 'Digit6':
+      case 'Numpad6':
+        this.onWeaponSlotPressed?.(6);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 6 });
+        break;
       case 'KeyE':
         this.state.interact = true;
         this.onInteractPressed?.();

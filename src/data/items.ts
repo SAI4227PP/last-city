@@ -91,6 +91,26 @@ export const ITEM_CATALOG: Record<string, InventoryItem> = {
     icon: '🎯',
     usable: false
   },
+  ammo_sniper: {
+    id: 'ammo_sniper',
+    name: '.50 Cal Sniper Ammo (x5)',
+    category: 'ammo',
+    count: 5,
+    maxStack: 25,
+    description: 'Armor-piercing heavy sniper cartridges.',
+    icon: '🔭',
+    usable: false
+  },
+  ammo_machinegun: {
+    id: 'ammo_machinegun',
+    name: '5.56mm Ammo Box (x60)',
+    category: 'ammo',
+    count: 60,
+    maxStack: 180,
+    description: 'Heavy drum/belt magazine for squad automatic weapons.',
+    icon: '📦',
+    usable: false
+  },
 
   // Crafting Materials
   cloth: {
@@ -179,6 +199,28 @@ export const ITEM_CATALOG: Record<string, InventoryItem> = {
     icon: '🎖️',
     usable: false,
     weaponType: 'rifle'
+  },
+  item_sniper: {
+    id: 'item_sniper',
+    name: 'Barrett .50 Sniper Rifle',
+    category: 'weapon',
+    count: 1,
+    maxStack: 1,
+    description: 'High-precision long-range anti-materiel sniper rifle.',
+    icon: '🔭',
+    usable: false,
+    weaponType: 'sniper'
+  },
+  item_machinegun: {
+    id: 'item_machinegun',
+    name: 'M249 Heavy Machine Gun',
+    category: 'weapon',
+    count: 1,
+    maxStack: 1,
+    description: 'Devastating squad automatic weapon with high magazine capacity.',
+    icon: '🛡️',
+    usable: false,
+    weaponType: 'machinegun'
   },
 
   // Quest Keys

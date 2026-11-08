@@ -4,6 +4,7 @@ import { AudioManager } from '@/core/audio/AudioManager';
 import { SaveManager } from '@/persistence/SaveManager';
 import { PlatformAdapter } from '@/platform/PlatformAdapter';
 import { EventBus } from '@/core/events/EventBus';
+import { WeaponAssetPool } from '@/features/combat/WeaponAssetPool';
 import { ApplicationContext } from './ApplicationContext';
 import { Logger } from '@/core/utils/Logger';
 
@@ -67,6 +68,11 @@ export class GameApplication {
 
     // Load Initial Scene (Main Menu)
     await engine.sceneManager.loadScene('main-menu');
+
+    // Pre-cache weapon models in background
+    WeaponAssetPool.getInstance().preloadAll().catch((err) => {
+      Logger.warn('Background weapon asset caching warning:', err);
+    });
 
     Logger.info('LAST CITY Ready.');
   }

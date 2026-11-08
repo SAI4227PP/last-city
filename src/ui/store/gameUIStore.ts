@@ -16,6 +16,7 @@ export interface WeaponUIState {
   name: string;
   currentAmmo: number;
   reserveAmmo: number;
+  maxReserveAmmo?: number;
   isRanged: boolean;
   isReloading?: boolean;
   slots?: WeaponSlotUI[];
@@ -148,7 +149,9 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
       { slot: 1, id: 'knife', name: 'Combat Knife', icon: '🗡️', isUnlocked: true, isEquipped: true, ammoText: 'READY' },
       { slot: 2, id: 'pistol', name: '9mm Pistol', icon: '🔫', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
       { slot: 3, id: 'shotgun', name: 'Pump Shotgun', icon: '💥', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
-      { slot: 4, id: 'rifle', name: 'Assault Rifle', icon: '🎯', isUnlocked: false, isEquipped: false, ammoText: '-- / --' }
+      { slot: 4, id: 'rifle', name: 'Assault Rifle', icon: '🎖️', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
+      { slot: 5, id: 'sniper', name: 'Barrett .50 Sniper', icon: '🔭', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
+      { slot: 6, id: 'machinegun', name: 'M249 Heavy MG', icon: '🛡️', isUnlocked: false, isEquipped: false, ammoText: '-- / --' }
     ]
   },
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
 import { ZombieAI } from './ai/ZombieAI';
-import { ZombieVariantType } from '@/shared/types';
+import { ZombieVariantType, ZombieModelType } from '@/shared/types';
 import { SurvivalSystem } from '@/features/survival/SurvivalSystem';
 import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
@@ -49,7 +49,11 @@ export class ZombieManager {
     this.physicsWorld = world;
   }
 
-  public spawnZombie(variant: ZombieVariantType, position: THREE.Vector3): ZombieAI | null {
+  public spawnZombie(
+    variant: ZombieVariantType,
+    position: THREE.Vector3,
+    modelOverride?: ZombieModelType
+  ): ZombieAI | null {
     const maxAllowed = PerformanceManager.getInstance().getConfig().maxActiveZombies;
     const activeCount = this.zombies.filter((z) => !z.isDead).length;
 
@@ -61,7 +65,8 @@ export class ZombieManager {
     // 1. Check object pool for recyclable zombie
     const pool = this.zombiePool.get(variant);
     if (pool && pool.length > 0) {
-      const recycledZombie = pool.pop()!;
+      const idx = modelOverride ? pool.findIndex((z) => z.modelType === modelOverride) : 0;
+      const recycledZombie = idx !== -1 ? pool.splice(idx, 1)[0] : pool.pop()!;
       recycledZombie.reset(position);
       this.zombies.push(recycledZombie);
       return recycledZombie;
@@ -69,7 +74,7 @@ export class ZombieManager {
 
     // 2. Otherwise instantiate new zombie
     const id = `zombie_${this.nextId++}`;
-    const zombie = new ZombieAI(id, variant, position, this.scene);
+    const zombie = new ZombieAI(id, variant, position, this.scene, modelOverride);
     this.zombies.push(zombie);
     return zombie;
   }

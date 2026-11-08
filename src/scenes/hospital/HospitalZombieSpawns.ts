@@ -17,7 +17,7 @@ export class HospitalZombieSpawns {
     this.triggers = [...HOSPITAL_LEVEL_CONFIG.zombieTriggers];
 
     // Initial pre-spawned hallway zombie so there's an immediate presence down the hall
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(0, 0, 18));
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(0, 0, 18), 'patient');
   }
 
   public update(playerPos: THREE.Vector3): void {
@@ -28,7 +28,8 @@ export class HospitalZombieSpawns {
       const dist = playerPos.distanceTo(trig.triggerCenter);
       if (dist <= trig.triggerDistance) {
         this.triggeredIds.add(trig.id);
-        this.zombieManager.spawnZombie(trig.variant, trig.spawnPos);
+        const modelType = trig.id === 'trigger_orderly_ward' ? 'zombie1' : (trig.variant === 'runner' ? 'patient' : 'zombie1');
+        this.zombieManager.spawnZombie(trig.variant, trig.spawnPos, modelType);
 
         if (trig.id === 'trigger_orderly_ward') {
           EventBus.getInstance().emit('subtitle:show', {

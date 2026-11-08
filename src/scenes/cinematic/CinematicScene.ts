@@ -155,11 +155,13 @@ export class CinematicScene extends BaseScene {
         inventory: [],
         equippedWeapon: 'knife',
         weapons: {
-          knife: { unlocked: true, currentAmmo: 0, reserveAmmo: 0 },
-          bat: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 },
-          pistol: { unlocked: false, currentAmmo: 12, reserveAmmo: 24 },
-          shotgun: { unlocked: false, currentAmmo: 6, reserveAmmo: 18 },
-          rifle: { unlocked: false, currentAmmo: 30, reserveAmmo: 60 }
+          knife: { unlocked: true, currentAmmo: 0, reserveAmmo: 0, maxReserveAmmo: 0 },
+          bat: { unlocked: false, currentAmmo: 0, reserveAmmo: 0, maxReserveAmmo: 0 },
+          pistol: { unlocked: false, currentAmmo: 15, reserveAmmo: 30, maxReserveAmmo: 150 },
+          shotgun: { unlocked: false, currentAmmo: 6, reserveAmmo: 18, maxReserveAmmo: 48 },
+          rifle: { unlocked: false, currentAmmo: 30, reserveAmmo: 60, maxReserveAmmo: 180 },
+          sniper: { unlocked: false, currentAmmo: 5, reserveAmmo: 15, maxReserveAmmo: 30 },
+          machinegun: { unlocked: false, currentAmmo: 100, reserveAmmo: 150, maxReserveAmmo: 300 }
         },
         completedMissions: [],
         safehouseUnlocked: false,

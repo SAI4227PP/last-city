@@ -92,7 +92,9 @@ describe('Cross-Device & Mobile Input Handling', () => {
         bat: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 },
         pistol: { unlocked: true, currentAmmo: 12, reserveAmmo: 24 },
         shotgun: { unlocked: true, currentAmmo: 6, reserveAmmo: 12 },
-        rifle: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 }
+        rifle: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 },
+        sniper: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 },
+        machinegun: { unlocked: false, currentAmmo: 0, reserveAmmo: 0 }
       },
       completedMissions: ['hosp_m1', 'city_m1'],
       safehouseUnlocked: true,

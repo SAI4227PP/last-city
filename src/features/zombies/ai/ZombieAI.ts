@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import { ZombieVariantType, ZombieState } from '@/shared/types';
+import { ZombieVariantType, ZombieState, ZombieModelType } from '@/shared/types';
 import { ZOMBIE_CONFIGS, ZombieConfig, ZombieHitboxConfig } from '@/data/zombies';
 import { ModelFactory } from '@/core/assets/ModelFactory';
 import { EventBus } from '@/core/events/EventBus';
 import { HitLocation, ARMOR_RESISTANCE_MODIFIERS } from '@/data/combat';
-import { ZombieAnimationController, ZombieAssetPool, ZombieClips } from '../ZombieAnimationController';
+import { ZombieAnimationController, ZombieAssetPool } from '../ZombieAnimationController';
 
 export interface ZombieDamageResult {
   damageDealt: number;
@@ -32,6 +32,7 @@ export class ZombieAI {
   public readonly id: string;
   public readonly variant: ZombieVariantType;
   public readonly config: ZombieConfig;
+  public readonly modelType: ZombieModelType;
   public readonly group: THREE.Group;
   public readonly hitbox: ZombieHitboxConfig;
   private modelParts: ReturnType<typeof ModelFactory.createZombieModel>;
@@ -41,9 +42,10 @@ export class ZombieAI {
   public currentHealth: number;
   public isDead: boolean = false;
 
-  // Real 3D Rigged Humanoid Skeletal Animation Controller
+  // Real 3D Rigged Humanoid Skeletal Animation Controller (used by 'patient' model)
   public animationController: ZombieAnimationController | null = null;
-  private skeletalModel: THREE.Object3D | null = null;
+  public skeletalModel: THREE.Object3D | null = null;
+  public attached3DModel: THREE.Object3D | null = null;
 
   // Backward compatibility getter/setter for tests and legacy callers
   public get health(): number {
@@ -99,11 +101,13 @@ export class ZombieAI {
     id: string,
     variant: ZombieVariantType,
     spawnPosition: THREE.Vector3,
-    scene: THREE.Scene
+    scene: THREE.Scene,
+    modelTypeOverride?: ZombieModelType
   ) {
     this.id = id;
     this.variant = variant;
     this.config = ZOMBIE_CONFIGS[variant];
+    this.modelType = modelTypeOverride ?? this.config.modelType;
     this.hitbox = this.config.hitbox;
     this.maxHealth = this.config.maxHealth;
     this.currentHealth = this.maxHealth;
@@ -144,8 +148,8 @@ export class ZombieAI {
     this.bloodSprite.renderOrder = 9999;
     this.group.add(this.bloodSprite);
 
-    // Initialize 3D skinned mesh model with skeletal animations if available
-    this.initSkeletalModel();
+    // Initialize 3D model (Skeletal GLB or High-Detail PBR OBJ)
+    this.initModel();
   }
 
   private drawRoundedRect(
@@ -244,31 +248,42 @@ export class ZombieAI {
     this.bloodTexture.needsUpdate = true;
   }
 
-  private initSkeletalModel(): void {
+  private initModel(): void {
     const pool = ZombieAssetPool.getInstance();
-    const clips = pool.getClips();
-    const model = pool.cloneModel();
-    if (clips && model) {
-      this.attachSkeletalModel(model, clips);
+    const model = pool.cloneModel(this.modelType);
+    if (model) {
+      this.attachLoadedModel(model);
     } else {
       pool.preload().then((ok) => {
         if (ok && !this.isDead) {
-          const c = pool.getClips();
-          const m = pool.cloneModel();
-          if (c && m) {
-            this.attachSkeletalModel(m, c);
+          const m = pool.cloneModel(this.modelType);
+          if (m) {
+            this.attachLoadedModel(m);
           }
         }
       }).catch(() => {});
     }
   }
 
-  private attachSkeletalModel(model: THREE.Object3D, clips: ZombieClips): void {
-    if (this.animationController || this.skeletalModel) return;
-    this.skeletalModel = model;
-    this.skeletalModel.scale.set(1, 1, 1);
-    this.group.add(this.skeletalModel);
-    this.animationController = new ZombieAnimationController(this.skeletalModel, clips);
+  // Backward compatibility alias for tests
+  public initSkeletalModel(): void {
+    this.initModel();
+  }
+
+  private attachLoadedModel(model: THREE.Object3D): void {
+    if (this.attached3DModel) return;
+    this.attached3DModel = model;
+    this.skeletalModel = model; // Preserve backward compatibility for tests
+    this.attached3DModel.scale.set(1, 1, 1);
+    this.group.add(this.attached3DModel);
+
+    // If rigged model (e.g. 'patient' with Mixamo bones), hook up ZombieAnimationController
+    if (this.modelType === 'patient') {
+      const clips = ZombieAssetPool.getInstance().getClips();
+      if (clips) {
+        this.animationController = new ZombieAnimationController(this.attached3DModel, clips);
+      }
+    }
 
     // Hide procedural placeholder meshes while preserving node hierarchy
     this.modelParts.head.visible = false;
@@ -278,6 +293,14 @@ export class ZombieAI {
     this.modelParts.leftLeg.visible = false;
     this.modelParts.rightLeg.visible = false;
     if (this.modelParts.jaw) this.modelParts.jaw.visible = false;
+  }
+
+  // Backward compatibility alias for tests
+  public attachSkeletalModel(model: THREE.Object3D, clips?: any): void {
+    if (clips && !this.animationController) {
+      this.animationController = new ZombieAnimationController(model, clips);
+    }
+    this.attachLoadedModel(model);
   }
 
   public getPosition(): THREE.Vector3 {
@@ -306,8 +329,11 @@ export class ZombieAI {
     this.group.rotation.set(0, 0, 0);
 
     if (this.animationController) {
-      this.animationController.isDead = false;
-      this.animationController.playLocomotion('idle', 0.1);
+      this.animationController.reset();
+    }
+    if (this.attached3DModel) {
+      this.attached3DModel.position.set(0, 0, 0);
+      this.attached3DModel.rotation.set(0, 0, 0);
     }
 
     // Reset blood sprite
@@ -680,7 +706,12 @@ export class ZombieAI {
     _camera?: THREE.Camera,
     isPlayerDead: boolean = false
   ): void {
-    if (this.isDead) return;
+    if (this.isDead) {
+      if (this.animationController) {
+        this.animationController.update(dt);
+      }
+      return;
+    }
 
     const distToPlayer = this.group.position.distanceTo(playerPos);
     this.attackCooldownTimer = Math.max(0, this.attackCooldownTimer - dt);
@@ -885,6 +916,36 @@ export class ZombieAI {
         this.modelParts.spine.rotation.x -= 0.35;
       }
       this.modelParts.head.rotation.x -= 0.25;
+    }
+
+    // Dynamic organic posture & gait for high-detail OBJ models (Zombie_1, Zombie_2)
+    if (this.attached3DModel && !this.animationController) {
+      if (isMoving) {
+        const rate = this.state === 'chase' ? (this.variant === 'runner' ? 11.0 : 8.0) : 5.5;
+        this.strideTimer += dt * rate;
+        // Natural infected limp: rhythmic sway and vertical gait bounce
+        this.attached3DModel.rotation.z = Math.sin(this.strideTimer * 0.7) * 0.055;
+        this.attached3DModel.rotation.x = 0.07 + Math.sin(this.strideTimer * 1.4) * 0.035;
+        this.attached3DModel.position.y = Math.abs(Math.sin(this.strideTimer * 0.7)) * 0.032;
+        this.attached3DModel.position.z = 0;
+      } else if (this.state === 'attack') {
+        const progress = Math.max(0, Math.min(1, 1.0 - this.stateTimer / 0.9));
+        const attackCycle = Math.sin(progress * Math.PI);
+        this.attached3DModel.rotation.x = 0.05 + attackCycle * 0.35;
+        this.attached3DModel.position.z = attackCycle * 0.25;
+      } else {
+        // Idle breathing and organic twitch
+        this.strideTimer += dt * 1.5;
+        this.attached3DModel.position.y = Math.sin(this.strideTimer) * 0.012;
+        this.attached3DModel.rotation.z = Math.sin(this.strideTimer * 0.8) * 0.018;
+        this.attached3DModel.rotation.x = 0.03;
+        this.attached3DModel.position.z = 0;
+      }
+
+      if (this.damageFlinchTimer > 0) {
+        this.attached3DModel.rotation.x -= 0.16;
+        this.attached3DModel.position.z -= 0.12;
+      }
     }
   }
 
@@ -1120,6 +1181,10 @@ export class ZombieAI {
     if (this.animationController) {
       this.animationController.dispose();
       this.animationController = null;
+    }
+    if (this.attached3DModel && this.attached3DModel.parent) {
+      this.attached3DModel.parent.remove(this.attached3DModel);
+      this.attached3DModel = null;
     }
     if (this.skeletalModel && this.skeletalModel.parent) {
       this.skeletalModel.parent.remove(this.skeletalModel);

@@ -8,6 +8,7 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { CameraManager } from '@/core/engine/CameraManager';
 import { ParticleSystem } from '@/core/engine/ParticleSystem';
 import { ZombieManager } from '@/features/zombies/ZombieManager';
+import { WeaponAssetPool } from './WeaponAssetPool';
 
 export class CombatManager {
   private weapons: Record<WeaponType, ExtendedWeaponStats>;
@@ -20,7 +21,7 @@ export class CombatManager {
 
   private eventBus: EventBus;
   private cameraManager: CameraManager;
-  private particleSystem: ParticleSystem;
+  private particleSystem?: ParticleSystem;
   private zombieManager?: ZombieManager;
 
   // Flashlight / muzzle flash
@@ -29,7 +30,7 @@ export class CombatManager {
   constructor(
     scene: THREE.Scene,
     cameraManager: CameraManager,
-    particleSystem: ParticleSystem
+    particleSystem?: ParticleSystem
   ) {
     this.eventBus = EventBus.getInstance();
     this.cameraManager = cameraManager;
@@ -37,8 +38,8 @@ export class CombatManager {
 
     // Deep clone weapon definitions
     this.weapons = JSON.parse(JSON.stringify(WEAPON_DEFINITIONS));
-    this.weapons.pistol.currentAmmo = 12;
-    this.weapons.pistol.reserveAmmo = 36;
+    this.weapons.pistol.currentAmmo = 15;
+    this.weapons.pistol.reserveAmmo = 30;
 
     // Muzzle flash point light
     this.muzzleFlashLight = new THREE.PointLight(0xffaa22, 0, 10);
@@ -87,14 +88,73 @@ export class CombatManager {
 
   public unlockWeapon(type: WeaponType, initialAmmo?: number, initialReserve?: number): void {
     this.unlockedWeapons.add(type);
-    if (initialAmmo !== undefined) this.weapons[type].currentAmmo = initialAmmo;
-    if (initialReserve !== undefined) this.weapons[type].reserveAmmo = initialReserve;
+    const weapon = this.weapons[type];
+    if (weapon) {
+      if (initialAmmo !== undefined) {
+        weapon.currentAmmo = Math.min(initialAmmo, weapon.maxAmmo);
+      }
+      if (initialReserve !== undefined) {
+        weapon.reserveAmmo = Math.min(initialReserve, weapon.maxReserveAmmo);
+      }
+    }
     this.equipWeapon(type);
   }
 
-  public addAmmo(type: WeaponType, amount: number): void {
-    this.weapons[type].reserveAmmo += amount;
+  /**
+   * Adds reserve ammunition for the specified weapon, clamped to its maximum reserve capacity.
+   * Never exceeds configured maxReserveAmmo.
+   * Returns the exact amount added and any leftover amount that could not fit.
+   */
+  public addAmmo(type: WeaponType, amount: number): { added: number; remaining: number } {
+    const weapon = this.weapons[type];
+    if (!weapon || !weapon.isRanged || amount <= 0) {
+      return { added: 0, remaining: amount };
+    }
+
+    const availableSpace = Math.max(0, weapon.maxReserveAmmo - weapon.reserveAmmo);
+    if (availableSpace <= 0) {
+      return { added: 0, remaining: amount };
+    }
+
+    const added = Math.min(availableSpace, amount);
+    const remaining = amount - added;
+
+    weapon.reserveAmmo += added;
     this.syncToStore();
+
+    return { added, remaining };
+  }
+
+  /**
+   * Safely removes reserve ammunition (e.g. when dropping ammo).
+   */
+  public removeAmmo(type: WeaponType, amount: number): number {
+    const weapon = this.weapons[type];
+    if (!weapon || !weapon.isRanged || amount <= 0) return 0;
+    const removed = Math.min(weapon.reserveAmmo, amount);
+    weapon.reserveAmmo -= removed;
+    this.syncToStore();
+    return removed;
+  }
+
+  /**
+   * Sets reserve ammunition directly, clamped to [0, maxReserveAmmo].
+   */
+  public setReserveAmmo(type: WeaponType, amount: number): void {
+    const weapon = this.weapons[type];
+    if (!weapon || !weapon.isRanged) return;
+    weapon.reserveAmmo = Math.max(0, Math.min(amount, weapon.maxReserveAmmo));
+    this.syncToStore();
+  }
+
+  public getAvailableReserveSpace(type: WeaponType): number {
+    const weapon = this.weapons[type];
+    if (!weapon || !weapon.isRanged) return 0;
+    return Math.max(0, weapon.maxReserveAmmo - weapon.reserveAmmo);
+  }
+
+  public getMaxReserveAmmo(type: WeaponType): number {
+    return this.weapons[type]?.maxReserveAmmo ?? 0;
   }
 
   public equipSlot(slotNumber: number): boolean {
@@ -103,7 +163,8 @@ export class CombatManager {
       2: 'pistol',
       3: 'shotgun',
       4: 'rifle',
-      5: 'bat'
+      5: 'sniper',
+      6: 'machinegun'
     };
 
     const targetWeapon = slotMap[slotNumber];
@@ -145,8 +206,17 @@ export class CombatManager {
 
     weapon.currentAmmo--;
 
-    // Audio SFX
-    const sfx = weapon.id === 'shotgun' ? 'gunshot_shotgun' : weapon.id === 'rifle' ? 'gunshot_rifle' : 'gunshot_pistol';
+    // Distinct audio SFX for all five firearms
+    const sfx =
+      weapon.id === 'shotgun'
+        ? 'gunshot_shotgun'
+        : weapon.id === 'rifle'
+        ? 'gunshot_rifle'
+        : weapon.id === 'sniper'
+        ? 'gunshot_sniper'
+        : weapon.id === 'machinegun'
+        ? 'gunshot_machinegun'
+        : 'gunshot_pistol';
     this.eventBus.emit('audio:play_sfx', { sound: sfx, volume: 1.0 });
 
     // Emit weapon fire event for UI, audio, and player recoil animation
@@ -159,10 +229,15 @@ export class CombatManager {
     // Camera recoil & screen trauma
     this.cameraManager.addTrauma(weapon.recoil);
 
-    // Muzzle flash visual
-    const flashPos = playerPos.clone().add(forwardDir.clone().multiplyScalar(0.9)).add(new THREE.Vector3(0, 1.4, 0));
+    // Muzzle flash visual positioned at the actual barrel offset
+    const muzzleOffset = WeaponAssetPool.getInstance().getMuzzleOffset(weapon.id);
+    const flashPos = playerPos
+      .clone()
+      .add(new THREE.Vector3(0, 1.45, 0))
+      .add(forwardDir.clone().multiplyScalar(muzzleOffset.z))
+      .add(new THREE.Vector3(0, muzzleOffset.y, 0));
     this.muzzleFlashLight.position.copy(flashPos);
-    this.muzzleFlashLight.intensity = 3.5;
+    this.muzzleFlashLight.intensity = weapon.id === 'sniper' ? 5.0 : weapon.id === 'shotgun' ? 4.5 : 3.5;
     setTimeout(() => {
       this.muzzleFlashLight.intensity = 0;
     }, 60);
@@ -218,7 +293,7 @@ export class CombatManager {
             if (hit.isHeadshot) entry.isHeadshot = true;
             entry.hitPoint = hit.hitPoint;
 
-            this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 18 : 10, pelletDir.clone().negate(), hit.isHeadshot);
+            this.particleSystem?.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 18 : 10, pelletDir.clone().negate(), hit.isHeadshot);
           }
         }
 
@@ -261,7 +336,7 @@ export class CombatManager {
 
           const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
 
-          this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 40 : 22, forwardDir.clone().negate(), hit.isHeadshot);
+          this.particleSystem?.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 40 : 22, forwardDir.clone().negate(), hit.isHeadshot);
           useGameUIStore.getState().setCrosshairHit(true, hit.isHeadshot);
 
           if (hit.isHeadshot) {
@@ -315,7 +390,7 @@ export class CombatManager {
 
         const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
 
-        this.particleSystem.spawnBloodSplatter(hit.hitPoint, 18, forwardDir.clone().negate(), false);
+        this.particleSystem?.spawnBloodSplatter(hit.hitPoint, 18, forwardDir.clone().negate(), false);
         this.eventBus.emit('audio:play_sfx', { sound: 'melee_hit', volume: 1.0 });
         useGameUIStore.getState().setCrosshairHit(true, false);
         this.cameraManager.addTrauma(0.04);
@@ -409,19 +484,28 @@ export class CombatManager {
         slot: 4,
         id: 'rifle',
         name: 'Assault Rifle',
-        icon: '🎯',
+        icon: '🎖️',
         isUnlocked: this.unlockedWeapons.has('rifle'),
         isEquipped: this.equippedWeapon === 'rifle',
         ammoText: `${this.weapons.rifle.currentAmmo} / ${this.weapons.rifle.reserveAmmo}`
       },
       {
         slot: 5,
-        id: 'bat',
-        name: 'Baseball Bat',
-        icon: '🏏',
-        isUnlocked: this.unlockedWeapons.has('bat'),
-        isEquipped: this.equippedWeapon === 'bat',
-        ammoText: '∞'
+        id: 'sniper',
+        name: 'Barrett .50 Sniper',
+        icon: '🔭',
+        isUnlocked: this.unlockedWeapons.has('sniper'),
+        isEquipped: this.equippedWeapon === 'sniper',
+        ammoText: `${this.weapons.sniper.currentAmmo} / ${this.weapons.sniper.reserveAmmo}`
+      },
+      {
+        slot: 6,
+        id: 'machinegun',
+        name: 'M249 Heavy MG',
+        icon: '🛡️',
+        isUnlocked: this.unlockedWeapons.has('machinegun'),
+        isEquipped: this.equippedWeapon === 'machinegun',
+        ammoText: `${this.weapons.machinegun.currentAmmo} / ${this.weapons.machinegun.reserveAmmo}`
       }
     ];
 
@@ -430,10 +514,15 @@ export class CombatManager {
       name: current.name,
       currentAmmo: current.currentAmmo,
       reserveAmmo: current.reserveAmmo,
+      maxReserveAmmo: current.maxReserveAmmo,
       isRanged: current.isRanged,
       isReloading: this.isReloading,
       slots
     });
+  }
+
+  public getIsReloading(): boolean {
+    return this.isReloading;
   }
 
   public dispose(): void {

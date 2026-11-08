@@ -17,6 +17,8 @@ import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { SaveManager } from '@/persistence/SaveManager';
 import { EventBus } from '@/core/events/EventBus';
 import { Logger } from '@/core/utils/Logger';
+import { WeaponLootManager } from '@/features/loot/WeaponLootManager';
+import { WeaponAssetPool } from '@/features/combat/WeaponAssetPool';
 
 interface Interactable {
   id: string;
@@ -37,6 +39,7 @@ export class OpenSurvivalScene extends BaseScene {
   public zombieManager!: ZombieManager;
   public missionManager!: MissionManager;
   public particleSystem!: ParticleSystem;
+  public lootManager!: WeaponLootManager;
 
   private interactables: Interactable[] = [];
   private currentInteractable: Interactable | null = null;
@@ -88,7 +91,7 @@ export class OpenSurvivalScene extends BaseScene {
       // Default starting equipment for Open Survival
       this.inventoryManager.addItem('item_knife', 1);
       this.inventoryManager.addItem('item_pistol', 1);
-      this.inventoryManager.addItem('ammo_9mm', 24);
+      this.inventoryManager.addItem('ammo_9mm', 30);
       this.inventoryManager.addItem('canned_beans', 2);
       this.inventoryManager.addItem('clean_water', 2);
       this.inventoryManager.addItem('cloth', 4);
@@ -96,7 +99,7 @@ export class OpenSurvivalScene extends BaseScene {
       this.inventoryManager.addItem('scrap_metal', 6);
 
       this.combatManager.unlockWeapon('knife');
-      this.combatManager.unlockWeapon('pistol', 12, 24);
+      this.combatManager.unlockWeapon('pistol', 15, 30);
       this.combatManager.equipWeapon('pistol');
     }
 
@@ -110,14 +113,37 @@ export class OpenSurvivalScene extends BaseScene {
     await this.player.init();
     this.zombieManager.setPlayer(this.player);
 
-    // 4. Setup Missions
+    // 4. Preload Weapon Assets & Setup Weapon Loot Manager
+    await WeaponAssetPool.getInstance().preloadAll();
+    this.lootManager = new WeaponLootManager(
+      this.scene,
+      this.combatManager,
+      this.inventoryManager,
+      this.engine.physicsWorld
+    );
+
+    // Initial tactical weapon drops across Veridia District
+    // Tactical Shotgun at Police Precinct
+    this.lootManager.spawnWeaponDrop('shotgun', new THREE.Vector3(18, 0.4, -20), 8, 16, 'district_police_shotgun');
+    // Military Assault Rifle at Abandoned Checkpoint
+    this.lootManager.spawnWeaponDrop('rifle', new THREE.Vector3(-22, 0.4, 25), 30, 60, 'district_checkpoint_rifle');
+    // High-Caliber Sniper Rifle at Rooftop / Water Tower Nest
+    this.lootManager.spawnWeaponDrop('sniper', new THREE.Vector3(30, 0.4, 30), 5, 15, 'district_sniper_nest');
+    // Heavy Machine Gun at Central Military Supply Depot
+    this.lootManager.spawnWeaponDrop('machinegun', new THREE.Vector3(-15, 0.4, -32), 60, 120, 'district_armory_machinegun');
+
+    // 5. Setup Missions
     this.missionManager.startStageMissions('open-survival');
 
-    // 5. Spawn Zombies Across District (Diverse Variants!)
+    // 6. Spawn Zombies Across District (Diverse Variants!)
     this.spawnDistrictZombies();
 
-    // 6. Connect Input Actions
+    // 7. Connect Input Actions
     this.engine.inputManager.onInteractPressed = () => {
+      // Prioritize picking up 3D weapon drop
+      if (this.lootManager.tryPickup(this.player.getPosition())) {
+        return;
+      }
       if (this.currentInteractable) {
         this.currentInteractable.onInteract();
       }
@@ -344,23 +370,23 @@ export class OpenSurvivalScene extends BaseScene {
   }
 
   private spawnDistrictZombies(): void {
-    // 1. Shamblers roaming streets
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-8, 0, -12));
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(12, 0, 16));
-    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-14, 0, 8));
+    // 1. Shamblers roaming streets (diverse mix of Zombie_1 and Patient)
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-8, 0, -12), 'zombie1');
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(12, 0, 16), 'patient');
+    this.zombieManager.spawnZombie('walker', new THREE.Vector3(-14, 0, 8), 'zombie1');
 
-    // 2. Fast Runners hunting around the grocery store
-    this.zombieManager.spawnZombie('runner', new THREE.Vector3(-18, 0, -16));
-    this.zombieManager.spawnZombie('runner', new THREE.Vector3(16, 0, -8));
+    // 2. Fast Runners hunting around the grocery store (Patient runner)
+    this.zombieManager.spawnZombie('runner', new THREE.Vector3(-18, 0, -16), 'patient');
+    this.zombieManager.spawnZombie('runner', new THREE.Vector3(16, 0, -8), 'patient');
 
-    // 3. Heavy Armored Brute outside the pharmacy
-    this.zombieManager.spawnZombie('brute', new THREE.Vector3(18, 0, -12));
+    // 3. Heavy Armored Brute outside the pharmacy (Zombie_2)
+    this.zombieManager.spawnZombie('brute', new THREE.Vector3(18, 0, -12), 'zombie2');
 
-    // 4. Toxic Spitter lurker in alleyway
-    this.zombieManager.spawnZombie('spitter', new THREE.Vector3(-6, 0, 28));
+    // 4. Toxic Spitter lurker in alleyway (Zombie_1)
+    this.zombieManager.spawnZombie('spitter', new THREE.Vector3(-6, 0, 28), 'zombie1');
 
-    // 5. Boss Abomination guarding the central intersection!
-    this.zombieManager.spawnZombie('boss', new THREE.Vector3(0, 0, -32));
+    // 5. Boss Abomination guarding the central intersection (Massive Zombie_2)
+    this.zombieManager.spawnZombie('boss', new THREE.Vector3(0, 0, -32), 'zombie2');
   }
 
   public saveGameState(): void {
@@ -380,22 +406,37 @@ export class OpenSurvivalScene extends BaseScene {
       inventory,
       equippedWeapon: equipped,
       weapons: {
-        knife: { unlocked: true, currentAmmo: 0, reserveAmmo: 0 },
-        bat: { unlocked: true, currentAmmo: 0, reserveAmmo: 0 },
+        knife: { unlocked: true, currentAmmo: 0, reserveAmmo: 0, maxReserveAmmo: 0 },
+        bat: { unlocked: true, currentAmmo: 0, reserveAmmo: 0, maxReserveAmmo: 0 },
         pistol: {
-          unlocked: true,
+          unlocked: this.combatManager.isWeaponUnlocked('pistol'),
           currentAmmo: this.combatManager.getWeaponStats('pistol').currentAmmo,
-          reserveAmmo: this.combatManager.getWeaponStats('pistol').reserveAmmo
+          reserveAmmo: this.combatManager.getWeaponStats('pistol').reserveAmmo,
+          maxReserveAmmo: this.combatManager.getWeaponStats('pistol').maxReserveAmmo
         },
         shotgun: {
-          unlocked: true,
+          unlocked: this.combatManager.isWeaponUnlocked('shotgun'),
           currentAmmo: this.combatManager.getWeaponStats('shotgun').currentAmmo,
-          reserveAmmo: this.combatManager.getWeaponStats('shotgun').reserveAmmo
+          reserveAmmo: this.combatManager.getWeaponStats('shotgun').reserveAmmo,
+          maxReserveAmmo: this.combatManager.getWeaponStats('shotgun').maxReserveAmmo
         },
         rifle: {
-          unlocked: true,
+          unlocked: this.combatManager.isWeaponUnlocked('rifle'),
           currentAmmo: this.combatManager.getWeaponStats('rifle').currentAmmo,
-          reserveAmmo: this.combatManager.getWeaponStats('rifle').reserveAmmo
+          reserveAmmo: this.combatManager.getWeaponStats('rifle').reserveAmmo,
+          maxReserveAmmo: this.combatManager.getWeaponStats('rifle').maxReserveAmmo
+        },
+        sniper: {
+          unlocked: this.combatManager.isWeaponUnlocked('sniper'),
+          currentAmmo: this.combatManager.getWeaponStats('sniper').currentAmmo,
+          reserveAmmo: this.combatManager.getWeaponStats('sniper').reserveAmmo,
+          maxReserveAmmo: this.combatManager.getWeaponStats('sniper').maxReserveAmmo
+        },
+        machinegun: {
+          unlocked: this.combatManager.isWeaponUnlocked('machinegun'),
+          currentAmmo: this.combatManager.getWeaponStats('machinegun').currentAmmo,
+          reserveAmmo: this.combatManager.getWeaponStats('machinegun').reserveAmmo,
+          maxReserveAmmo: this.combatManager.getWeaponStats('machinegun').maxReserveAmmo
         }
       },
       completedMissions: this.missionManager.getCompletedMissions(),
@@ -457,6 +498,9 @@ export class OpenSurvivalScene extends BaseScene {
         key: 'E'
       });
     }
+
+    // 6. Update Loot Drops (proximity prompt updates if standing near dropped weapon)
+    this.lootManager.update(dt, playerPos);
   }
 
   public fixedUpdate(fixedDelta: number): void {
@@ -468,6 +512,7 @@ export class OpenSurvivalScene extends BaseScene {
     this.player.dispose();
     this.zombieManager.dispose();
     this.combatManager.dispose();
+    this.lootManager.dispose();
     this.particleSystem.dispose();
     useGameUIStore.getState().setInteractionPrompt({ visible: false, text: '', key: 'E' });
     AudioManager.getInstance().stopAmbience();

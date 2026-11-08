@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { Logger } from '@/core/utils/Logger';
+import { ZombieModelType } from '@/shared/types';
 
 export type ZombieAnimState = 'idle' | 'walk' | 'run' | 'attack' | 'death';
 
@@ -16,9 +18,18 @@ export interface ZombieClips {
 export class ZombieAssetPool {
   private static instance: ZombieAssetPool;
   private loader: GLTFLoader = new GLTFLoader();
-  private baseModel: THREE.Object3D | null = null;
+  private objLoader: OBJLoader = new OBJLoader();
+  private textureLoader: THREE.TextureLoader = new THREE.TextureLoader();
+
+  private patientModel: THREE.Object3D | null = null;
+  private zombie1Model: THREE.Object3D | null = null;
+  private zombie2Model: THREE.Object3D | null = null;
   private clips: ZombieClips | null = null;
   private loadPromise: Promise<boolean> | null = null;
+
+  public get baseModel(): THREE.Object3D | null {
+    return this.patientModel;
+  }
 
   public static getInstance(): ZombieAssetPool {
     if (!this.instance) {
@@ -28,7 +39,7 @@ export class ZombieAssetPool {
   }
 
   public async preload(): Promise<boolean> {
-    if (this.baseModel && this.clips) return true;
+    if (this.patientModel && this.zombie1Model && this.zombie2Model && this.clips) return true;
     if (this.loadPromise) return this.loadPromise;
 
     this.loadPromise = this.doPreload();
@@ -36,6 +47,18 @@ export class ZombieAssetPool {
   }
 
   private async doPreload(): Promise<boolean> {
+    await Promise.allSettled([
+      this.preloadPatient(),
+      this.preloadZombie1(),
+      this.preloadZombie2()
+    ]);
+
+    const loadedCount = [this.patientModel, this.zombie1Model, this.zombie2Model].filter(Boolean).length;
+    Logger.info(`ZombieAssetPool: Preload finished. Loaded ${loadedCount}/3 zombie 3D models.`);
+    return loadedCount > 0;
+  }
+
+  private async preloadPatient(): Promise<boolean> {
     try {
       const basePath = '/assets/characters/zombie/animations/';
       // Load all 5 animation GLBs in parallel
@@ -48,14 +71,14 @@ export class ZombieAssetPool {
       ]);
 
       if (!idleGltf || !walkGltf || !runGltf || !attackGltf || !deathGltf) {
-        Logger.warn('ZombieAssetPool: One or more zombie animation GLBs could not be loaded.');
+        Logger.warn('ZombieAssetPool: One or more patient zombie animation GLBs could not be loaded.');
         return false;
       }
 
       // Use the rigged scene from idle as the authoritative base model
-      this.baseModel = idleGltf.scene;
-      if (this.baseModel) {
-        this.baseModel.traverse((child) => {
+      this.patientModel = idleGltf.scene;
+      if (this.patientModel) {
+        this.patientModel.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
@@ -84,10 +107,94 @@ export class ZombieAssetPool {
         death: deathClip
       };
 
-      Logger.info('ZombieAssetPool: Successfully preloaded 3D zombie model and 5 animations.');
+      Logger.info('ZombieAssetPool: Successfully preloaded Patient zombie model and 5 animations.');
       return true;
     } catch (err) {
-      Logger.warn(`ZombieAssetPool: Asset loading failed (${err}). Using procedural fallback.`);
+      Logger.warn(`ZombieAssetPool: Patient asset loading failed (${err}).`);
+      return false;
+    }
+  }
+
+  private async preloadZombie1(): Promise<boolean> {
+    try {
+      const basePath = '/assets/characters/zombies/model/Zombie_1/';
+      const [obj, diffuse, normal, roughness, metallic] = await Promise.all([
+        this.loadObj(`${basePath}base.obj`),
+        this.loadTexture(`${basePath}texture_diffuse.png`, true),
+        this.loadTexture(`${basePath}texture_normal.png`),
+        this.loadTexture(`${basePath}texture_roughness.png`),
+        this.loadTexture(`${basePath}texture_metallic.png`)
+      ]);
+
+      if (!obj) {
+        Logger.warn('ZombieAssetPool: Zombie_1 base.obj could not be loaded.');
+        return false;
+      }
+
+      const material = new THREE.MeshStandardMaterial({
+        map: diffuse ?? undefined,
+        normalMap: normal ?? undefined,
+        roughnessMap: roughness ?? undefined,
+        metalnessMap: metallic ?? undefined,
+        roughness: 0.82,
+        metalness: 0.12
+      });
+
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          (child as THREE.Mesh).material = material;
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      this.zombie1Model = obj;
+      Logger.info('ZombieAssetPool: Successfully preloaded Zombie_1 model and 2K PBR textures.');
+      return true;
+    } catch (err) {
+      Logger.warn(`ZombieAssetPool: Failed preloading Zombie_1: ${err}`);
+      return false;
+    }
+  }
+
+  private async preloadZombie2(): Promise<boolean> {
+    try {
+      const basePath = '/assets/characters/zombies/model/Zombie_2/';
+      const [obj, diffuse, normal, roughness, metallic] = await Promise.all([
+        this.loadObj(`${basePath}base.obj`),
+        this.loadTexture(`${basePath}texture_diffuse.png`, true),
+        this.loadTexture(`${basePath}texture_normal.png`),
+        this.loadTexture(`${basePath}texture_roughness.png`),
+        this.loadTexture(`${basePath}texture_metallic.png`)
+      ]);
+
+      if (!obj) {
+        Logger.warn('ZombieAssetPool: Zombie_2 base.obj could not be loaded.');
+        return false;
+      }
+
+      const material = new THREE.MeshStandardMaterial({
+        map: diffuse ?? undefined,
+        normalMap: normal ?? undefined,
+        roughnessMap: roughness ?? undefined,
+        metalnessMap: metallic ?? undefined,
+        roughness: 0.88,
+        metalness: 0.15
+      });
+
+      obj.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          (child as THREE.Mesh).material = material;
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
+
+      this.zombie2Model = obj;
+      Logger.info('ZombieAssetPool: Successfully preloaded Zombie_2 model and 2K PBR textures.');
+      return true;
+    } catch (err) {
+      Logger.warn(`ZombieAssetPool: Failed preloading Zombie_2: ${err}`);
       return false;
     }
   }
@@ -100,6 +207,40 @@ export class ZombieAssetPool {
         undefined,
         (err) => {
           Logger.warn(`ZombieAssetPool: Failed loading ${url}: ${err}`);
+          resolve(null);
+        }
+      );
+    });
+  }
+
+  private loadObj(url: string): Promise<THREE.Group | null> {
+    return new Promise((resolve) => {
+      this.objLoader.load(
+        url,
+        (obj) => resolve(obj),
+        undefined,
+        (err) => {
+          Logger.warn(`ZombieAssetPool: Failed loading OBJ ${url}: ${err}`);
+          resolve(null);
+        }
+      );
+    });
+  }
+
+  private loadTexture(url: string, isColor: boolean = false): Promise<THREE.Texture | null> {
+    return new Promise((resolve) => {
+      this.textureLoader.load(
+        url,
+        (tex) => {
+          tex.flipY = true;
+          if (isColor) {
+            tex.colorSpace = THREE.SRGBColorSpace;
+          }
+          resolve(tex);
+        },
+        undefined,
+        (err) => {
+          Logger.warn(`ZombieAssetPool: Failed loading texture ${url}: ${err}`);
           resolve(null);
         }
       );
@@ -131,9 +272,32 @@ export class ZombieAssetPool {
     return cloned;
   }
 
-  public cloneModel(): THREE.Object3D | null {
-    if (!this.baseModel) return null;
-    return SkeletonUtils.clone(this.baseModel);
+  public cloneModel(type: ZombieModelType = 'patient'): THREE.Object3D | null {
+    if (type === 'zombie1') {
+      if (this.zombie1Model) return this.zombie1Model.clone(true);
+      if (this.patientModel) return SkeletonUtils.clone(this.patientModel);
+      return null;
+    }
+    if (type === 'zombie2') {
+      if (this.zombie2Model) return this.zombie2Model.clone(true);
+      if (this.patientModel) return SkeletonUtils.clone(this.patientModel);
+      return null;
+    }
+    // Default patient
+    if (this.patientModel) return SkeletonUtils.clone(this.patientModel);
+    if (this.zombie1Model) return this.zombie1Model.clone(true);
+    if (this.zombie2Model) return this.zombie2Model.clone(true);
+    return null;
+  }
+
+  public isSkeletal(type: ZombieModelType): boolean {
+    return type === 'patient';
+  }
+
+  public hasModel(type: ZombieModelType): boolean {
+    if (type === 'zombie1') return !!this.zombie1Model;
+    if (type === 'zombie2') return !!this.zombie2Model;
+    return !!this.patientModel;
   }
 
   public getClips(): ZombieClips | null {
@@ -267,12 +431,26 @@ export class ZombieAnimationController {
 
     deathAction.reset();
     deathAction.setEffectiveTimeScale(1.0);
-    deathAction.setEffectiveWeight(1);
     deathAction.fadeIn(fadeDuration);
     deathAction.play();
 
     this.currentAction = deathAction;
     this.currentState = 'death';
+  }
+
+  public reset(): void {
+    this.isDead = false;
+    this.currentState = 'idle';
+    this.actions.forEach((act) => {
+      act.stop();
+      act.reset();
+    });
+    const idleAction = this.actions.get('idle');
+    if (idleAction) {
+      idleAction.setEffectiveWeight(1);
+      idleAction.play();
+      this.currentAction = idleAction;
+    }
   }
 
   public getCurrentState(): ZombieAnimState {

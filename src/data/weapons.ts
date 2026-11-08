@@ -30,5 +30,13 @@ export const WEAPON_DEFINITIONS: Record<WeaponType, ExtendedWeaponStats> = {
   rifle: {
     ...WEAPON_COMBAT_CONFIGS.rifle,
     damage: WEAPON_COMBAT_CONFIGS.rifle.bodyDamage
+  },
+  sniper: {
+    ...WEAPON_COMBAT_CONFIGS.sniper,
+    damage: WEAPON_COMBAT_CONFIGS.sniper.bodyDamage
+  },
+  machinegun: {
+    ...WEAPON_COMBAT_CONFIGS.machinegun,
+    damage: WEAPON_COMBAT_CONFIGS.machinegun.bodyDamage
   }
 };

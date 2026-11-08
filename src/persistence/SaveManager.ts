@@ -1,5 +1,6 @@
 import { openDB, IDBPDatabase } from 'idb';
-import { PlayerSaveData, AudioSettings, GraphicsSettings } from '@/shared/types';
+import { PlayerSaveData, AudioSettings, GraphicsSettings, WeaponType } from '@/shared/types';
+import { WEAPON_COMBAT_CONFIGS } from '@/data/combat';
 import { Logger } from '@/core/utils/Logger';
 
 const DB_NAME = 'LastCityDB';
@@ -72,7 +73,7 @@ export class SaveManager {
   public async loadGame(): Promise<PlayerSaveData | null> {
     if (!this.isIndexedDBAvailable || !this.dbPromise) {
       const mem = this.memorySaves.get(SAVE_SLOT_KEY);
-      return mem ? JSON.parse(JSON.stringify(mem)) : null;
+      return mem ? this.validateAndClampSaveData(JSON.parse(JSON.stringify(mem))) : null;
     }
 
     try {
@@ -80,13 +81,47 @@ export class SaveManager {
       const data = await db.get('saves', SAVE_SLOT_KEY);
       if (data) {
         Logger.info(`Save game loaded for stage "${data.stage}".`);
-        return data as PlayerSaveData;
+        return this.validateAndClampSaveData(data as PlayerSaveData);
       }
       return null;
     } catch (err) {
       Logger.error('Failed to load save from IndexedDB:', err);
       return null;
     }
+  }
+
+  /**
+   * Validates and clamps saved weapon ammunition reserves against configured capacity limits.
+   * Logs warnings whenever a saved value exceeds configured capacity.
+   */
+  public validateAndClampSaveData(data: PlayerSaveData): PlayerSaveData {
+    if (!data || !data.weapons) return data;
+
+    (Object.keys(data.weapons) as WeaponType[]).forEach((wType) => {
+      const wData = data.weapons[wType];
+      const cfg = WEAPON_COMBAT_CONFIGS[wType];
+      if (wData && cfg) {
+        wData.maxReserveAmmo = cfg.maxReserveAmmo;
+
+        // Validate and clamp magazine currentAmmo
+        if (wData.currentAmmo > cfg.maxAmmo) {
+          Logger.warn(
+            `SaveManager: Saved magazine ammo for "${wType}" (${wData.currentAmmo}) exceeds capacity (${cfg.maxAmmo}). Clamping.`
+          );
+          wData.currentAmmo = cfg.maxAmmo;
+        }
+
+        // Validate and clamp reserveAmmo
+        if (wData.reserveAmmo > cfg.maxReserveAmmo) {
+          Logger.warn(
+            `SaveManager: Saved reserve ammo for "${wType}" (${wData.reserveAmmo}) exceeds configured capacity limit (${cfg.maxReserveAmmo}). Clamping to ${cfg.maxReserveAmmo}.`
+          );
+          wData.reserveAmmo = cfg.maxReserveAmmo;
+        }
+      }
+    });
+
+    return data;
   }
 
   public async hasSave(): Promise<boolean> {

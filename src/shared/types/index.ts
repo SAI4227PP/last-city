@@ -9,7 +9,9 @@ export interface VitalStats {
   thirst: number;
 }
 
-export type WeaponType = 'knife' | 'bat' | 'pistol' | 'shotgun' | 'rifle';
+export type WeaponType = 'knife' | 'bat' | 'pistol' | 'shotgun' | 'rifle' | 'sniper' | 'machinegun';
+
+export type WeaponRarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
 export interface WeaponStats {
   id: WeaponType;
@@ -18,11 +20,13 @@ export interface WeaponStats {
   damage: number;
   fireRate: number; // shots or swings per second
   range: number;
-  maxAmmo: number;
+  maxAmmo: number;        // Magazine capacity
+  maxReserveAmmo: number; // Maximum reserve ammunition capacity
   currentAmmo: number;
   reserveAmmo: number;
   reloadTime: number; // seconds
   recoil: number;
+  rarity?: WeaponRarity;
 }
 
 export type ItemCategory = 'weapon' | 'ammo' | 'medicine' | 'food' | 'water' | 'crafting' | 'quest';
@@ -52,6 +56,7 @@ export interface CraftingRecipe {
 }
 
 export type ZombieVariantType = 'walker' | 'runner' | 'brute' | 'spitter' | 'boss';
+export type ZombieModelType = 'patient' | 'zombie1' | 'zombie2';
 
 export type ZombieState = 'idle' | 'patrol' | 'investigate' | 'detect' | 'chase' | 'attack' | 'damage' | 'dead';
 
@@ -83,7 +88,7 @@ export interface PlayerSaveData {
   vitals: VitalStats;
   inventory: InventoryItem[];
   equippedWeapon: WeaponType;
-  weapons: Record<WeaponType, { unlocked: boolean; currentAmmo: number; reserveAmmo: number }>;
+  weapons: Record<WeaponType, { unlocked: boolean; currentAmmo: number; reserveAmmo: number; maxReserveAmmo?: number }>;
   completedMissions: string[];
   safehouseUnlocked: boolean;
   gameTimeMinutes: number;

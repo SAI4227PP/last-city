@@ -34,6 +34,19 @@ export class EventBus {
     };
   }
 
+  public off<K extends keyof GameEventPayloads>(
+    event: K,
+    callback: EventCallback<GameEventPayloads[K]>
+  ): void {
+    const set = this.listeners.get(event);
+    if (set) {
+      set.delete(callback);
+      if (set.size === 0) {
+        this.listeners.delete(event);
+      }
+    }
+  }
+
   public emit<K extends keyof GameEventPayloads>(
     event: K,
     payload?: GameEventPayloads[K]

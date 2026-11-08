@@ -5,6 +5,8 @@ import { AudioManager } from '@/core/audio/AudioManager';
 import { SaveManager } from '@/persistence/SaveManager';
 import { PerformanceManager } from '@/core/performance/PerformanceManager';
 import { EventBus } from '@/core/events/EventBus';
+import { WeaponType } from '@/shared/types';
+import { AMMO_ITEM_TO_WEAPON_MAP } from '@/data/combat';
 
 export class UIManager {
   private root: HTMLElement;
@@ -946,19 +948,24 @@ export class UIManager {
           ammoDisplay.innerText = 'RELOADING...';
           ammoDisplay.style.color = '#f6ad55';
         } else {
-          ammoDisplay.innerText = state.weapon.isRanged
-            ? `${state.weapon.currentAmmo} / ${state.weapon.reserveAmmo}`
-            : 'READY';
+          if (state.weapon.isRanged) {
+            const maxPart = state.weapon.maxReserveAmmo !== undefined ? ` / ${state.weapon.maxReserveAmmo}` : '';
+            ammoDisplay.innerText = `${state.weapon.currentAmmo} / ${state.weapon.reserveAmmo}${maxPart}`;
+          } else {
+            ammoDisplay.innerText = 'READY';
+          }
           ammoDisplay.style.color = 'var(--color-accent-amber)';
         }
       }
 
       const iconMap: Record<string, string> = {
         knife: '🗡️',
+        bat: '🏏',
         pistol: '🔫',
         shotgun: '💥',
         rifle: '🎯',
-        bat: '🏏'
+        sniper: '🔭',
+        machinegun: '🛡️'
       };
       const iconDisplay = document.getElementById('weapon-icon-display');
       if (iconDisplay && state.weapon.id) {
@@ -1051,7 +1058,21 @@ export class UIManager {
 
   private updateItemDetails(item: any): void {
     document.getElementById('detail-title')!.innerText = item.name;
-    document.getElementById('detail-desc')!.innerText = item.description;
+
+    let desc = item.description || '';
+    const currentScene = this.engine.sceneManager.getCurrentScene() as any;
+    if (currentScene && currentScene.combatManager) {
+      const cm = currentScene.combatManager;
+      const weaponType: WeaponType | undefined = item.weaponType || AMMO_ITEM_TO_WEAPON_MAP[item.id];
+      if (weaponType) {
+        const stats = cm.getWeaponStats(weaponType);
+        if (stats && stats.isRanged) {
+          desc += `\n\nAmmo Reserve: ${stats.reserveAmmo} / ${stats.maxReserveAmmo}`;
+        }
+      }
+    }
+
+    document.getElementById('detail-desc')!.innerText = desc;
 
     const btnUse = document.getElementById('btn-use-item')!;
     const btnEquip = document.getElementById('btn-equip-item')!;
