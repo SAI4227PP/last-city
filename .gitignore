@@ -29,3 +29,7 @@ yarn-error.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Large City Assets
+public/assets/city/
+assets/city/
