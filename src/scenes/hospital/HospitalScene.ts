@@ -47,9 +47,10 @@ export class HospitalScene extends BaseScene {
   }
 
   public async init(): Promise<void> {
-    // 1. Atmosphere: Background & Balanced Fog
-    this.scene.background = new THREE.Color(0x060c14);
-    this.scene.fog = new THREE.FogExp2(0x060c14, 0.016);
+    // 1. Atmosphere: Background & Subtle Clean Depth Fog
+    this.scene.background = new THREE.Color(0x1a2632);
+    // Linear fog: crystal clear in immediate proximity (0-28m), soft atmospheric fade down long corridors (28-75m)
+    this.scene.fog = new THREE.Fog(0x1a2632, 28, 75);
 
     // 2. Initialize Core Subsystems
     this.survivalSystem = new SurvivalSystem();
@@ -85,14 +86,24 @@ export class HospitalScene extends BaseScene {
       this.engine.cameraManager,
       startPos
     );
+    await this.player.init();
+    this.zombieManager.setPlayer(this.player);
 
-    // Initial starting item: Tactical Knife
+    // Initial starting item: Tactical Knife & Service Pistol
     this.inventoryManager.addItem('item_knife', 1);
+    this.inventoryManager.addItem('item_ammo_9mm', 36);
     this.combatManager.unlockWeapon('knife');
+    this.combatManager.unlockWeapon('pistol', 12, 36);
 
     // 5. Connect Input Actions
     this.engine.inputManager.onInteractPressed = () => {
       this.interactions.triggerInteract();
+    };
+    this.engine.inputManager.onReloadPressed = () => {
+      this.combatManager.reload();
+    };
+    this.engine.inputManager.onWeaponSlotPressed = (slot) => {
+      this.combatManager.equipSlot(slot);
     };
 
     // 6. Connect Stage Exit Transition
@@ -122,12 +133,12 @@ export class HospitalScene extends BaseScene {
     this.survivalSystem.update(dt, this.player.isSprinting);
     this.combatManager.update(dt);
 
-    if (this.engine.inputManager.getState().attack) {
-      this.combatManager.attack(playerPos, this.player.getForwardVector());
+    if (!this.player.isDead && this.engine.inputManager.getState().attack) {
+      this.combatManager.attack(playerPos, this.player.getAimVector());
     }
 
     // 2. Update Zombie AI
-    this.zombieManager.update(dt, playerPos);
+    this.zombieManager.update(dt, playerPos, this.engine.cameraManager.camera, this.player.isDead);
 
     // 3. Update Particles
     this.particleSystem.update(dt);

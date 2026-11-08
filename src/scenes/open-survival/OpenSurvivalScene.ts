@@ -48,8 +48,8 @@ export class OpenSurvivalScene extends BaseScene {
   }
 
   public async init(): Promise<void> {
-    this.scene.background = new THREE.Color(0x05080c);
-    this.scene.fog = new THREE.FogExp2(0x05080c, 0.018);
+    this.scene.background = new THREE.Color(0x6e8498);
+    this.scene.fog = new THREE.FogExp2(0x6e8498, 0.007);
 
     // 1. Initialize Subsystems
     this.survivalSystem = new SurvivalSystem();
@@ -107,6 +107,8 @@ export class OpenSurvivalScene extends BaseScene {
       this.engine.cameraManager,
       startPos
     );
+    await this.player.init();
+    this.zombieManager.setPlayer(this.player);
 
     // 4. Setup Missions
     this.missionManager.startStageMissions('open-survival');
@@ -120,6 +122,12 @@ export class OpenSurvivalScene extends BaseScene {
         this.currentInteractable.onInteract();
       }
     };
+    this.engine.inputManager.onReloadPressed = () => {
+      this.combatManager.reload();
+    };
+    this.engine.inputManager.onWeaponSlotPressed = (slot) => {
+      this.combatManager.equipSlot(slot);
+    };
 
     // UI & Audio
     useGameUIStore.getState().setStage('open-survival');
@@ -128,10 +136,10 @@ export class OpenSurvivalScene extends BaseScene {
   }
 
   private buildCityDistrict(): void {
-    const roadMat = new THREE.MeshStandardMaterial({ color: 0x14181f, roughness: 0.92 });
-    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x252b36, roughness: 0.85 });
-    const brickMat = new THREE.MeshStandardMaterial({ color: 0x3d2b27, roughness: 0.9 });
-    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x2e3540, roughness: 0.8 });
+    const roadMat = new THREE.MeshStandardMaterial({ color: 0x3b444f, roughness: 0.88 });
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x6a7785, roughness: 0.8 });
+    const brickMat = new THREE.MeshStandardMaterial({ color: 0x824d42, roughness: 0.85 });
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x5e6c7c, roughness: 0.78 });
 
     // Ground Grid (140m x 140m)
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(140, 140), roadMat);
@@ -142,14 +150,18 @@ export class OpenSurvivalScene extends BaseScene {
 
     // Directional Sunlight with adaptive shadow resolution
     const perfConfig = PerformanceManager.getInstance().getConfig();
-    const sun = new THREE.DirectionalLight(0xd9b382, 1.4);
-    sun.position.set(45, 60, -35);
+    const sun = new THREE.DirectionalLight(0xffeed6, 2.8);
+    sun.position.set(45, 65, -35);
     sun.castShadow = perfConfig.shadows;
     sun.shadow.mapSize.width = perfConfig.shadowMapSize;
     sun.shadow.mapSize.height = perfConfig.shadowMapSize;
     this.scene.add(sun);
 
-    const ambient = new THREE.AmbientLight(0x131a24, 1.2);
+    // Sky Dome & Earth Bounce
+    const hemi = new THREE.HemisphereLight(0x9bc0db, 0x505b63, 1.8);
+    this.scene.add(hemi);
+
+    const ambient = new THREE.AmbientLight(0xdbe6f0, 1.25);
     this.scene.add(ambient);
 
     // Sidewalk Plaza
@@ -402,12 +414,12 @@ export class OpenSurvivalScene extends BaseScene {
     this.survivalSystem.update(dt, this.player.isSprinting);
     this.combatManager.update(dt);
 
-    if (this.engine.inputManager.getState().attack) {
-      this.combatManager.attack(playerPos, this.player.getForwardVector());
+    if (!this.player.isDead && this.engine.inputManager.getState().attack) {
+      this.combatManager.attack(playerPos, this.player.getAimVector());
     }
 
     // 2. Update Zombie Horde AI
-    this.zombieManager.update(dt, playerPos);
+    this.zombieManager.update(dt, playerPos, this.engine.cameraManager.camera, this.player.isDead);
 
     // 3. Update Particles
     this.particleSystem.update(dt);

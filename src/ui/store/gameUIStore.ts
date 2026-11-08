@@ -1,6 +1,26 @@
 import { createStore } from 'zustand/vanilla';
 import { StageId, VitalStats, InventoryItem, CraftingRecipe } from '@/shared/types';
 
+export interface WeaponSlotUI {
+  slot: number;
+  id: string;
+  name: string;
+  icon: string;
+  isUnlocked: boolean;
+  isEquipped: boolean;
+  ammoText: string;
+}
+
+export interface WeaponUIState {
+  id?: string;
+  name: string;
+  currentAmmo: number;
+  reserveAmmo: number;
+  isRanged: boolean;
+  isReloading?: boolean;
+  slots?: WeaponSlotUI[];
+}
+
 export interface GameUIState {
   currentStage: StageId;
   isPaused: boolean;
@@ -41,12 +61,7 @@ export interface GameUIState {
 
   // Vitals & Weaponry
   vitals: VitalStats;
-  weapon: {
-    name: string;
-    currentAmmo: number;
-    reserveAmmo: number;
-    isRanged: boolean;
-  };
+  weapon: WeaponUIState;
 
   // Inventory & Crafting
   inventoryTab: 'inventory' | 'crafting';
@@ -73,7 +88,7 @@ export interface GameUIState {
   setCrosshairHit: (hit: boolean, isHeadshot?: boolean) => void;
   setActiveMission: (mission: { title: string; objective: string; counter?: string }) => void;
   setVitals: (vitals: VitalStats) => void;
-  setWeapon: (weapon: { name: string; currentAmmo: number; reserveAmmo: number; isRanged: boolean }) => void;
+  setWeapon: (weapon: WeaponUIState) => void;
   setInventoryTab: (tab: 'inventory' | 'crafting') => void;
   setInventoryItems: (items: InventoryItem[]) => void;
   setSelectedItem: (item: InventoryItem | null) => void;
@@ -123,10 +138,18 @@ export const gameUIStore = createStore<GameUIState>((set) => ({
   },
 
   weapon: {
+    id: 'knife',
     name: 'Combat Knife',
     currentAmmo: 0,
     reserveAmmo: 0,
-    isRanged: false
+    isRanged: false,
+    isReloading: false,
+    slots: [
+      { slot: 1, id: 'knife', name: 'Combat Knife', icon: '🗡️', isUnlocked: true, isEquipped: true, ammoText: 'READY' },
+      { slot: 2, id: 'pistol', name: '9mm Pistol', icon: '🔫', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
+      { slot: 3, id: 'shotgun', name: 'Pump Shotgun', icon: '💥', isUnlocked: false, isEquipped: false, ammoText: '-- / --' },
+      { slot: 4, id: 'rifle', name: 'Assault Rifle', icon: '🎯', isUnlocked: false, isEquipped: false, ammoText: '-- / --' }
+    ]
   },
 
   inventoryTab: 'inventory',

@@ -1,6 +1,15 @@
 import { ZombieVariantType } from '@/shared/types';
 import { ARMOR_RESISTANCE_MODIFIERS, HitLocation } from './combat';
 
+export interface ZombieHitboxConfig {
+  bodyRadius: number;       // Cylinder/capsule radius for torso & limbs
+  bodyHeight: number;       // Total height of body collision
+  headRadius: number;       // Sphere radius for head
+  headCenterY: number;      // Y height of head center relative to zombie base
+  meleeTolerance: number;   // Extra forgiveness buffer for melee sweeps (0.15 - 0.35m)
+  bulletTolerance: number;  // Extra forgiveness buffer for raycasts (0.08 - 0.20m)
+}
+
 export interface ZombieConfig {
   variant: ZombieVariantType;
   name: string;
@@ -15,6 +24,7 @@ export interface ZombieConfig {
   scale: [number, number, number];
   tintColor: number;
   armorMultipliers: Record<HitLocation, number>;
+  hitbox: ZombieHitboxConfig;
 }
 
 export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
@@ -31,7 +41,15 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     hearingRadius: 18,
     scale: [1, 1, 1],
     tintColor: 0x5a6351,
-    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.walker
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.walker,
+    hitbox: {
+      bodyRadius: 0.44,
+      bodyHeight: 1.85,
+      headRadius: 0.24,
+      headCenterY: 1.62,
+      meleeTolerance: 0.25,
+      bulletTolerance: 0.12
+    }
   },
   runner: {
     variant: 'runner',
@@ -46,7 +64,15 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     hearingRadius: 26,
     scale: [0.95, 0.95, 0.95],
     tintColor: 0x8a4b38,
-    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.runner
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.runner,
+    hitbox: {
+      bodyRadius: 0.38,
+      bodyHeight: 1.75,
+      headRadius: 0.20,
+      headCenterY: 1.50,
+      meleeTolerance: 0.28,
+      bulletTolerance: 0.14
+    }
   },
   brute: {
     variant: 'brute',
@@ -61,7 +87,15 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     hearingRadius: 15,
     scale: [1.4, 1.4, 1.4],
     tintColor: 0x3d434d,
-    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.brute
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.brute,
+    hitbox: {
+      bodyRadius: 0.72,
+      bodyHeight: 2.50,
+      headRadius: 0.34,
+      headCenterY: 2.18,
+      meleeTolerance: 0.32,
+      bulletTolerance: 0.16
+    }
   },
   spitter: {
     variant: 'spitter',
@@ -76,7 +110,15 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     hearingRadius: 22,
     scale: [1.0, 1.0, 1.0],
     tintColor: 0x486b36,
-    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.spitter
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.spitter,
+    hitbox: {
+      bodyRadius: 0.46,
+      bodyHeight: 1.85,
+      headRadius: 0.24,
+      headCenterY: 1.60,
+      meleeTolerance: 0.25,
+      bulletTolerance: 0.12
+    }
   },
   boss: {
     variant: 'boss',
@@ -91,6 +133,14 @@ export const ZOMBIE_CONFIGS: Record<ZombieVariantType, ZombieConfig> = {
     hearingRadius: 35,
     scale: [1.8, 1.8, 1.8],
     tintColor: 0x2b1e22,
-    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.boss
+    armorMultipliers: ARMOR_RESISTANCE_MODIFIERS.boss,
+    hitbox: {
+      bodyRadius: 0.98,
+      bodyHeight: 3.25,
+      headRadius: 0.44,
+      headCenterY: 2.85,
+      meleeTolerance: 0.35,
+      bulletTolerance: 0.20
+    }
   }
 };

@@ -24,6 +24,6 @@ export const DEFAULT_GAME_CONFIG: GameConfig = {
   graphics: {
     shadows: true,
     pixelRatioMax: 2.0,
-    toneMappingExposure: 1.1
+    toneMappingExposure: 1.45
   }
 };

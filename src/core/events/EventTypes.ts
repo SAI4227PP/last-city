@@ -19,10 +19,13 @@ export interface GameEventPayloads {
 
   // Combat & Weapons
   'weapon:switch': { weapon: WeaponType };
+  'weapon:select': { weapon: WeaponType };
+  'weapon:select_slot': { slot: number };
+  'weapon:reload_request': void;
   'weapon:fire': { weapon: WeaponType; currentAmmo: number; reserveAmmo: number };
   'weapon:reload': { weapon: WeaponType };
   'weapon:hit': { targetType: 'zombie' | 'prop'; damage: number; isHeadshot: boolean; position: [number, number, number] };
-  'combat:damage_number': { amount: number; position: [number, number, number]; isHeadshot: boolean; hitLocation: string; armorReduced?: number };
+  'combat:damage_number': { amount: number; position: [number, number, number]; isHeadshot: boolean; hitLocation: string; armorReduced?: number; remainingHealth?: number; maxHealth?: number; targetName?: string };
   'combat:headshot': { position: [number, number, number] };
 
   // Zombie

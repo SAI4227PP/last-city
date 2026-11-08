@@ -36,7 +36,7 @@ export class EventBus {
 
   public emit<K extends keyof GameEventPayloads>(
     event: K,
-    payload: GameEventPayloads[K]
+    payload?: GameEventPayloads[K]
   ): void {
     const set = this.listeners.get(event);
     if (set) {

@@ -36,11 +36,12 @@ export class SurvivalSystem {
     if (checkCooldown && this.damageCooldownTimer > 0) return;
 
     if (checkCooldown) {
-      this.damageCooldownTimer = 0.25; // 250ms invulnerability window against duplicate frame spam
+      this.damageCooldownTimer = 0.12; // 120ms brief frame-safety invulnerability window
     }
 
     this.vitals.health = Math.max(0, this.vitals.health - amount);
     this.eventBus.emit('player:damage', { amount, source });
+    this.eventBus.emit('audio:play_sfx', { sound: 'melee_hit', volume: 1.0 });
     this.eventBus.emit('audio:play_sfx', { sound: 'heartbeat', volume: 0.9 });
     this.syncToStore();
 

@@ -6,7 +6,7 @@ export class CameraManager {
   private trauma: number = 0; // Shake trauma (0 to 1)
   private shakeOffset: THREE.Vector3 = new THREE.Vector3();
 
-  constructor(fov: number = 65, near: number = 0.1, far: number = 1000) {
+  constructor(fov: number = 65, near: number = 0.08, far: number = 1000) {
     const aspect = window.innerWidth / window.innerHeight;
     this.camera = new THREE.PerspectiveCamera(fov, aspect, near, far);
     this.camera.position.set(0, 5, 10);

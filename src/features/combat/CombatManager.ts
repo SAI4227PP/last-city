@@ -11,10 +11,12 @@ import { ZombieManager } from '@/features/zombies/ZombieManager';
 
 export class CombatManager {
   private weapons: Record<WeaponType, ExtendedWeaponStats>;
+  private unlockedWeapons: Set<WeaponType> = new Set(['knife', 'pistol']);
   private equippedWeapon: WeaponType = 'knife';
   private fireTimer: number = 0;
   private isReloading: boolean = false;
   private reloadTimer: number = 0;
+  private isPlayerDead: boolean = false;
 
   private eventBus: EventBus;
   private cameraManager: CameraManager;
@@ -35,10 +37,30 @@ export class CombatManager {
 
     // Deep clone weapon definitions
     this.weapons = JSON.parse(JSON.stringify(WEAPON_DEFINITIONS));
+    this.weapons.pistol.currentAmmo = 12;
+    this.weapons.pistol.reserveAmmo = 36;
 
     // Muzzle flash point light
     this.muzzleFlashLight = new THREE.PointLight(0xffaa22, 0, 10);
     scene.add(this.muzzleFlashLight);
+
+    // Listen to slot select events from UI and InputManager
+    this.eventBus.on('weapon:select_slot', (data: { slot: number }) => {
+      this.equipSlot(data.slot);
+    });
+
+    this.eventBus.on('weapon:select', (data: { weapon: WeaponType }) => {
+      this.equipWeapon(data.weapon);
+    });
+
+    this.eventBus.on('weapon:reload_request', () => {
+      this.reload();
+    });
+
+    this.eventBus.on('player:death', () => {
+      this.isPlayerDead = true;
+      this.isReloading = false;
+    });
 
     this.syncToStore();
   }
@@ -55,7 +77,16 @@ export class CombatManager {
     return this.weapons[type];
   }
 
+  public isWeaponUnlocked(type: WeaponType): boolean {
+    return this.unlockedWeapons.has(type);
+  }
+
+  public getUnlockedWeapons(): WeaponType[] {
+    return Array.from(this.unlockedWeapons);
+  }
+
   public unlockWeapon(type: WeaponType, initialAmmo?: number, initialReserve?: number): void {
+    this.unlockedWeapons.add(type);
     if (initialAmmo !== undefined) this.weapons[type].currentAmmo = initialAmmo;
     if (initialReserve !== undefined) this.weapons[type].reserveAmmo = initialReserve;
     this.equipWeapon(type);
@@ -66,7 +97,25 @@ export class CombatManager {
     this.syncToStore();
   }
 
+  public equipSlot(slotNumber: number): boolean {
+    const slotMap: Record<number, WeaponType> = {
+      1: 'knife',
+      2: 'pistol',
+      3: 'shotgun',
+      4: 'rifle',
+      5: 'bat'
+    };
+
+    const targetWeapon = slotMap[slotNumber];
+    if (targetWeapon && this.unlockedWeapons.has(targetWeapon)) {
+      this.equipWeapon(targetWeapon);
+      return true;
+    }
+    return false;
+  }
+
   public equipWeapon(type: WeaponType): void {
+    if (!this.unlockedWeapons.has(type)) return;
     if (this.equippedWeapon === type) return;
     this.equippedWeapon = type;
     this.isReloading = false;
@@ -75,7 +124,7 @@ export class CombatManager {
   }
 
   public attack(playerPos: THREE.Vector3, forwardDir: THREE.Vector3): boolean {
-    if (this.fireTimer > 0 || this.isReloading) return false;
+    if (this.isPlayerDead || this.fireTimer > 0 || this.isReloading) return false;
 
     const weapon = this.weapons[this.equippedWeapon];
     this.fireTimer = 1.0 / weapon.fireRate;
@@ -120,7 +169,10 @@ export class CombatManager {
 
     // Hit detection against zombies
     if (this.zombieManager) {
-      const rayOrigin = playerPos.clone().add(new THREE.Vector3(0, 1.5, 0));
+      const rayOrigin = playerPos.clone().add(new THREE.Vector3(0, 1.45, 0));
+      const cam = this.cameraManager.camera;
+      const camOrigin = cam ? cam.position.clone() : undefined;
+      const camDir = cam ? cam.getWorldDirection(new THREE.Vector3()) : undefined;
 
       if (weapon.id === 'shotgun') {
         // Multi-pellet shotgun simulation
@@ -166,7 +218,7 @@ export class CombatManager {
             if (hit.isHeadshot) entry.isHeadshot = true;
             entry.hitPoint = hit.hitPoint;
 
-            this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 16 : 8);
+            this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 18 : 10, pelletDir.clone().negate(), hit.isHeadshot);
           }
         }
 
@@ -176,7 +228,7 @@ export class CombatManager {
             this.eventBus.emit('audio:play_sfx', { sound: 'headshot_hit', volume: 1.0 });
           }
 
-          hitMap.forEach((entry) => {
+          hitMap.forEach((entry, zombie) => {
             this.eventBus.emit('weapon:hit', {
               targetType: 'zombie',
               damage: entry.damage,
@@ -188,13 +240,16 @@ export class CombatManager {
               amount: entry.damage,
               position: [entry.hitPoint.x, entry.hitPoint.y, entry.hitPoint.z],
               isHeadshot: entry.isHeadshot,
-              hitLocation: entry.hitLocation
+              hitLocation: entry.hitLocation,
+              remainingHealth: zombie.currentHealth,
+              maxHealth: zombie.maxHealth,
+              targetName: zombie.config.name
             });
           });
         }
       } else {
         // Single projectile / raycast weapon (pistol, rifle)
-        const hit = this.zombieManager.checkRayHit(rayOrigin, forwardDir, weapon.range);
+        const hit = this.zombieManager.checkRayHit(rayOrigin, forwardDir, weapon.range, camOrigin, camDir);
 
         if (hit) {
           const dmgCalc = CombatConfigManager.getInstance().calculateDamage(
@@ -206,7 +261,7 @@ export class CombatManager {
 
           const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
 
-          this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 35 : 18);
+          this.particleSystem.spawnBloodSplatter(hit.hitPoint, hit.isHeadshot ? 40 : 22, forwardDir.clone().negate(), hit.isHeadshot);
           useGameUIStore.getState().setCrosshairHit(true, hit.isHeadshot);
 
           if (hit.isHeadshot) {
@@ -225,7 +280,10 @@ export class CombatManager {
             position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z],
             isHeadshot: hit.isHeadshot,
             hitLocation: hit.hitLocation,
-            armorReduced: result.armorReduced
+            armorReduced: result.armorReduced,
+            remainingHealth: result.remainingHealth,
+            maxHealth: hit.zombie.maxHealth,
+            targetName: hit.zombie.config.name
           });
         }
       }
@@ -245,7 +303,7 @@ export class CombatManager {
 
     if (this.zombieManager) {
       const swingOrigin = playerPos.clone().add(new THREE.Vector3(0, 1.3, 0));
-      const hit = this.zombieManager.checkMeleeSweep(swingOrigin, forwardDir, weapon.range, 1.2);
+      const hit = this.zombieManager.checkMeleeSweep(swingOrigin, forwardDir, weapon.range, 1.6);
 
       if (hit) {
         const dmgCalc = CombatConfigManager.getInstance().calculateDamage(
@@ -257,7 +315,7 @@ export class CombatManager {
 
         const result = hit.zombie.takeDamage(dmgCalc.finalDamage, hit.hitPoint, hit.hitLocation);
 
-        this.particleSystem.spawnBloodSplatter(hit.hitPoint, 15);
+        this.particleSystem.spawnBloodSplatter(hit.hitPoint, 18, forwardDir.clone().negate(), false);
         this.eventBus.emit('audio:play_sfx', { sound: 'melee_hit', volume: 1.0 });
         useGameUIStore.getState().setCrosshairHit(true, false);
         this.cameraManager.addTrauma(0.04);
@@ -274,7 +332,10 @@ export class CombatManager {
           position: [hit.hitPoint.x, hit.hitPoint.y, hit.hitPoint.z],
           isHeadshot: false,
           hitLocation: hit.hitLocation,
-          armorReduced: result.armorReduced
+          armorReduced: result.armorReduced,
+          remainingHealth: result.remainingHealth,
+          maxHealth: hit.zombie.maxHealth,
+          targetName: hit.zombie.config.name
         });
       }
     }
@@ -292,6 +353,7 @@ export class CombatManager {
     this.reloadTimer = weapon.reloadTime;
     this.eventBus.emit('audio:play_sfx', { sound: 'reload', volume: 0.8 });
     this.eventBus.emit('weapon:reload', { weapon: this.equippedWeapon });
+    this.syncToStore();
   }
 
   public update(dt: number): void {
@@ -315,11 +377,62 @@ export class CombatManager {
 
   public syncToStore(): void {
     const current = this.weapons[this.equippedWeapon];
+    const slots = [
+      {
+        slot: 1,
+        id: 'knife',
+        name: 'Tactical Knife',
+        icon: '🗡️',
+        isUnlocked: this.unlockedWeapons.has('knife'),
+        isEquipped: this.equippedWeapon === 'knife',
+        ammoText: '∞'
+      },
+      {
+        slot: 2,
+        id: 'pistol',
+        name: '9mm Pistol',
+        icon: '🔫',
+        isUnlocked: this.unlockedWeapons.has('pistol'),
+        isEquipped: this.equippedWeapon === 'pistol',
+        ammoText: `${this.weapons.pistol.currentAmmo} / ${this.weapons.pistol.reserveAmmo}`
+      },
+      {
+        slot: 3,
+        id: 'shotgun',
+        name: '12G Shotgun',
+        icon: '💥',
+        isUnlocked: this.unlockedWeapons.has('shotgun'),
+        isEquipped: this.equippedWeapon === 'shotgun',
+        ammoText: `${this.weapons.shotgun.currentAmmo} / ${this.weapons.shotgun.reserveAmmo}`
+      },
+      {
+        slot: 4,
+        id: 'rifle',
+        name: 'Assault Rifle',
+        icon: '🎯',
+        isUnlocked: this.unlockedWeapons.has('rifle'),
+        isEquipped: this.equippedWeapon === 'rifle',
+        ammoText: `${this.weapons.rifle.currentAmmo} / ${this.weapons.rifle.reserveAmmo}`
+      },
+      {
+        slot: 5,
+        id: 'bat',
+        name: 'Baseball Bat',
+        icon: '🏏',
+        isUnlocked: this.unlockedWeapons.has('bat'),
+        isEquipped: this.equippedWeapon === 'bat',
+        ammoText: '∞'
+      }
+    ];
+
     useGameUIStore.getState().setWeapon({
+      id: current.id,
       name: current.name,
       currentAmmo: current.currentAmmo,
       reserveAmmo: current.reserveAmmo,
-      isRanged: current.isRanged
+      isRanged: current.isRanged,
+      isReloading: this.isReloading,
+      slots
     });
   }
 

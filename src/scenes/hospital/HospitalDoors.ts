@@ -32,14 +32,14 @@ export class HospitalDoors {
     this.scene.add(this.doorsGroup);
 
     this.doorMat = new THREE.MeshStandardMaterial({
-      color: 0x3d4b59,
-      roughness: 0.6,
-      metalness: 0.2
+      color: 0x5e7080,
+      roughness: 0.55,
+      metalness: 0.15
     });
 
     this.fireDoorMat = new THREE.MeshStandardMaterial({
-      color: 0x8a2323,
-      metalness: 0.6,
+      color: 0xb53535,
+      metalness: 0.5,
       roughness: 0.35
     });
 

@@ -15,17 +15,18 @@ export class MainMenuScene extends BaseScene {
   }
 
   public async init(): Promise<void> {
-    this.scene.background = new THREE.Color(0x06080b);
-    this.scene.fog = new THREE.FogExp2(0x06080b, 0.025);
+    this.scene.background = new THREE.Color(0x16222f);
+    this.scene.fog = new THREE.FogExp2(0x16222f, 0.015);
 
-    // Ambient & Directional Moonlight
-    const ambientLight = new THREE.AmbientLight(0x1a2634, 1.2);
-    const moonLight = new THREE.DirectionalLight(0x5c7c99, 1.8);
+    // Ambient, Hemisphere & Directional Moonlight
+    const hemiLight = new THREE.HemisphereLight(0x7898b0, 0x1f2933, 1.4);
+    const ambientLight = new THREE.AmbientLight(0x4a657c, 1.35);
+    const moonLight = new THREE.DirectionalLight(0x8eb2d4, 2.4);
     moonLight.position.set(20, 40, -30);
-    this.scene.add(ambientLight, moonLight);
+    this.scene.add(hemiLight, ambientLight, moonLight);
 
     // City Skyline Backdrop (Silhouettes with glowing eerie windows)
-    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x0f141c, roughness: 0.9 });
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x24303d, roughness: 0.85 });
     const windowMat = new THREE.MeshBasicMaterial({ color: 0xd69e2e });
 
     for (let i = 0; i < 40; i++) {

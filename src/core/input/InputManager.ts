@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Logger } from '@/core/utils/Logger';
+import { EventBus } from '@/core/events/EventBus';
 
 export interface InputState {
   forward: boolean;
@@ -50,6 +51,8 @@ export class InputManager {
   public onInventoryPressed?: () => void;
   public onPausePressed?: () => void;
   public onReloadPressed?: () => void;
+  public onWeaponSlotPressed?: (slot: number) => void;
+  public onControlsPressed?: () => void;
 
   constructor(targetElement: HTMLElement) {
     this.targetElement = targetElement;
@@ -113,6 +116,11 @@ export class InputManager {
 
     document.addEventListener('pointerlockchange', () => {
       this.isPointerLocked = document.pointerLockElement === this.targetElement;
+      if (!this.isPointerLocked) {
+        this.resetFrameDeltas();
+        this.state.attack = false;
+        this.state.aim = false;
+      }
     });
 
     // Mobile touch look handling on canvas
@@ -182,10 +190,37 @@ export class InputManager {
         this.state.sprint = true;
         break;
       case 'KeyC':
+      case 'ControlLeft':
+      case 'ControlRight':
         this.state.crouch = !this.state.crouch; // Toggle crouch
         break;
       case 'Space':
         this.state.jump = true;
+        break;
+      case 'Digit1':
+      case 'Numpad1':
+        this.onWeaponSlotPressed?.(1);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 1 });
+        break;
+      case 'Digit2':
+      case 'Numpad2':
+        this.onWeaponSlotPressed?.(2);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 2 });
+        break;
+      case 'Digit3':
+      case 'Numpad3':
+        this.onWeaponSlotPressed?.(3);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 3 });
+        break;
+      case 'Digit4':
+      case 'Numpad4':
+        this.onWeaponSlotPressed?.(4);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 4 });
+        break;
+      case 'Digit5':
+      case 'Numpad5':
+        this.onWeaponSlotPressed?.(5);
+        EventBus.getInstance().emit('weapon:select_slot', { slot: 5 });
         break;
       case 'KeyE':
         this.state.interact = true;
@@ -194,6 +229,10 @@ export class InputManager {
       case 'KeyR':
         this.state.reload = true;
         this.onReloadPressed?.();
+        EventBus.getInstance().emit('weapon:reload_request');
+        break;
+      case 'KeyH':
+        this.onControlsPressed?.();
         break;
       case 'Tab':
         e.preventDefault();
@@ -268,13 +307,22 @@ export class InputManager {
   }
 
   private onMouseDown(e: MouseEvent): void {
+    const isTargetCanvas = e.target === this.targetElement;
+    if (!isTargetCanvas) {
+      return;
+    }
+
     if (e.button === 0) {
-      this.state.attack = true;
-      if (!this.isPointerLocked) {
+      if (this.isPointerLocked) {
+        this.state.attack = true;
+      } else {
+        // First click on game canvas requests pointer lock without firing weapon
         this.requestPointerLock();
       }
     } else if (e.button === 2) {
-      this.state.aim = true;
+      if (this.isPointerLocked) {
+        this.state.aim = true;
+      }
     }
   }
 

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
 import { InputManager } from '@/core/input/InputManager';
 import { CameraManager } from '@/core/engine/CameraManager';
@@ -10,18 +9,24 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { WeaponType } from '@/shared/types';
 import { MathUtils } from '@/core/utils/MathUtils';
 import { PlayerAnimationController } from './PlayerAnimationController';
+import { PlayerAssetPool } from './PlayerAssetPool';
 import { Logger } from '@/core/utils/Logger';
+
+export interface PlayerControllerOptions {
+  useDebugModel?: boolean;
+}
 
 export class PlayerController {
   public readonly group: THREE.Group;
-  private modelParts: ReturnType<typeof ModelFactory.createPlayerModel>;
-  public athleticModel?: THREE.Group;
+  private modelParts?: ReturnType<typeof ModelFactory.createPlayerModel>;
+  public athleticModel?: THREE.Object3D;
   public animationController?: PlayerAnimationController;
   private weaponRBone?: THREE.Object3D;
   private rifleMeshes: THREE.SkinnedMesh[] = [];
   private equippedWeapon: WeaponType = 'knife';
+  public isDead: boolean = false;
 
-  private rigidBody: RAPIER.RigidBody;
+  public readonly rigidBody: RAPIER.RigidBody;
   public readonly collider: RAPIER.Collider;
 
   private inputManager: InputManager;
@@ -37,9 +42,9 @@ export class PlayerController {
   private currentWeaponMesh?: THREE.Group;
 
   // Movement parameters
-  private walkSpeed: number = 4.5;
-  private runSpeed: number = 8.5;
-  private crouchSpeed: number = 2.2;
+  private walkSpeed: number = 3.2;
+  private runSpeed: number = 6.8;
+  private crouchSpeed: number = 2.0;
   private rotationSpeed: number = 10.0;
   private jumpForce: number = 6.0;
 
@@ -48,6 +53,8 @@ export class PlayerController {
   private cameraPitch: number = 0.08;
   private readonly cameraOffset: THREE.Vector3 = new THREE.Vector3(-0.45, 0.25, -2.3);
   private isCameraInitialized: boolean = false;
+  private currentCameraDistance: number = 2.35;
+  private maxCameraDistance: number = 2.35;
 
   // Event unsubscriptions
   private weaponSwitchUnsub?: () => void;
@@ -78,24 +85,26 @@ export class PlayerController {
   private static readonly _scratchEuler: THREE.Euler = new THREE.Euler(0, 0, 0, 'YXZ');
   private static readonly _scratchUp: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
   private static readonly _scratchForward: THREE.Vector3 = new THREE.Vector3(0, 0, 1);
+  private static readonly _scratchRight: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchCamRayDir: THREE.Vector3 = new THREE.Vector3();
+  private static readonly _scratchCamRightNudge: THREE.Vector3 = new THREE.Vector3();
 
   constructor(
     scene: THREE.Scene,
     physicsWorld: PhysicsWorld,
     inputManager: InputManager,
     cameraManager: CameraManager,
-    startPosition: THREE.Vector3 = new THREE.Vector3(0, 1.5, 0)
+    startPosition: THREE.Vector3 = new THREE.Vector3(0, 1.5, 0),
+    options?: PlayerControllerOptions
   ) {
     this.physicsWorld = physicsWorld;
     this.inputManager = inputManager;
     this.cameraManager = cameraManager;
     this.eventBus = EventBus.getInstance();
 
-    // 1. Create Model Hierarchy (Procedural fallback initially)
-    this.modelParts = ModelFactory.createPlayerModel();
+    // 1. Create Root Player Group
     this.group = new THREE.Group();
     this.group.name = 'PlayerGroup';
-    this.group.add(this.modelParts.root);
     this.group.position.copy(startPosition);
     scene.add(this.group);
 
@@ -103,15 +112,20 @@ export class PlayerController {
     this.flashlightTarget = new THREE.Object3D();
     scene.add(this.flashlightTarget);
 
-    // Front flashlight beam mounted on right shoulder forward of the chest
-    this.flashlight = new THREE.SpotLight(0xfff3db, 3.5, 35, Math.PI / 4.2, 0.5, 1.2);
+    // Front tactical flashlight beam mounted forward of chest with broad throw
+    this.flashlight = new THREE.SpotLight(0xfffaed, 4.5, 45, Math.PI / 3.8, 0.4, 1.1);
     this.flashlight.position.set(-0.25, 1.35, 0.45);
     this.flashlight.castShadow = false; // Prevents player's own torso/arm self-shadowing that blacks out the world
     this.flashlight.target = this.flashlightTarget;
     this.group.add(this.flashlight);
 
-    // Subtle atmospheric character fill/rim light so the survivor silhouette and gear never black out
-    const playerRim = new THREE.PointLight(0x7892a8, 1.2, 5, 1.5);
+    // Dynamic 360-degree player local fill light so survivor character, equipped weapon, and close zombies/interactables are always crisp and legible
+    const playerFill = new THREE.PointLight(0xf4f8ff, 1.6, 9.0, 1.3);
+    playerFill.position.set(0, 1.35, 0.2);
+    this.group.add(playerFill);
+
+    // Subtle atmospheric character rim light for depth separation
+    const playerRim = new THREE.PointLight(0xa5c4db, 1.0, 6, 1.5);
     playerRim.position.set(0, 1.5, -0.8);
     this.group.add(playerRim);
 
@@ -149,10 +163,12 @@ export class PlayerController {
 
     this.damageUnsub = this.eventBus.on('player:damage', () => {
       this.flinchImpulse = 0.35;
+      this.cameraManager.addTrauma(0.45);
       this.animationController?.triggerDamage('front');
     });
 
     this.deathUnsub = this.eventBus.on('player:death', () => {
+      this.isDead = true;
       this.animationController?.triggerDeath();
     });
 
@@ -162,74 +178,119 @@ export class PlayerController {
 
     this.attachWeaponMesh('knife');
 
-    // 5. Asynchronously load Athletic_man.glb character model
-    this.loadAthleticManModel();
+    // 4. Initialize Character Model (Real Athletic_man model from start; demo model avoided)
+    const pool = PlayerAssetPool.getInstance();
+    const preloadedModel = pool.cloneModel();
+
+    if (preloadedModel && !options?.useDebugModel) {
+      // Direct instant attachment of preloaded real model — zero delay, zero placeholder
+      this.attachRealModel(preloadedModel);
+    } else if (options?.useDebugModel) {
+      // Explicit development setting for debug mannequin
+      this.attachDebugModel();
+    } else {
+      // Preload not ready yet; initiate load immediately
+      this.loadAthleticManModel();
+    }
   }
 
   /**
-   * Loads the Athletic_man.glb base character and replaces procedural fallback model.
+   * Completes asynchronous loading of the Athletic_man model if not already preloaded.
    */
-  private loadAthleticManModel(): void {
-    const loader = new GLTFLoader();
-    const modelUrl = '/assets/characters/player/model/Athletic_man.glb';
+  public async init(): Promise<void> {
+    if (!this.athleticModel) {
+      await this.loadAthleticManModel();
+    }
+  }
 
-    loader.load(
-      modelUrl,
-      (gltf) => {
-        const model = gltf.scene;
-        this.athleticModel = model;
-        model.name = 'AthleticManVisual';
+  /**
+   * Attaches the authoritative Athletic_man 3D model, its skeletal rig, animation controller, and equipment sockets.
+   */
+  public attachRealModel(model: THREE.Object3D): void {
+    if (this.athleticModel) return;
 
-        this.rifleMeshes = [];
-        this.weaponRBone = undefined;
+    this.athleticModel = model;
+    this.athleticModel.name = 'AthleticManVisual';
 
-        model.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            child.castShadow = true;
-            child.receiveShadow = true;
-            if (
-              child.name === 'Athletic_man_11' ||
-              child.name === 'Athletic_man_12' ||
-              child.name === 'Athletic_man_13'
-            ) {
-              this.rifleMeshes.push(child as THREE.SkinnedMesh);
-            }
-          }
-          if ((child as THREE.Bone).isBone && child.name === 'WeaponR') {
-            this.weaponRBone = child;
-          }
-        });
+    this.rifleMeshes = [];
+    this.weaponRBone = undefined;
 
-        // Remove procedural model parts from root group
-        if (this.modelParts.root.parent === this.group) {
-          this.group.remove(this.modelParts.root);
+    model.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+        if (
+          child.name === 'Athletic_man_11' ||
+          child.name === 'Athletic_man_12' ||
+          child.name === 'Athletic_man_13'
+        ) {
+          this.rifleMeshes.push(child as THREE.SkinnedMesh);
         }
-
-        // Add the loaded athletic man model to root group
-        this.group.add(model);
-
-        // Initialize animation controller with the loaded model
-        this.animationController = new PlayerAnimationController(model);
-        this.animationController.preloadCoreAnimations().then(() => {
-          const initAnim = this.equippedWeapon === 'knife' || this.equippedWeapon === 'bat'
-            ? 'sword_idle'
-            : this.equippedWeapon === 'pistol'
-            ? 'pistol_idle'
-            : this.equippedWeapon === 'rifle'
-            ? 'rifle_idle'
-            : 'idle';
-          this.animationController?.playBaseLocomotion(initAnim);
-        });
-
-        // Update weapon meshes on the new model
-        this.updateWeaponMeshes(this.equippedWeapon);
-        Logger.info('PlayerController: Successfully loaded Athletic_man.glb and initialized animation controller.');
-      },
-      undefined,
-      (err) => {
-        Logger.warn(`PlayerController: Athletic_man.glb load skipped (${err}), keeping procedural fallback.`);
       }
-    );
+      if ((child as THREE.Bone).isBone && child.name === 'WeaponR') {
+        this.weaponRBone = child;
+      }
+    });
+
+    // Cleanly remove any debug model if present
+    if (this.modelParts?.root?.parent === this.group) {
+      this.group.remove(this.modelParts.root);
+      this.modelParts = undefined;
+    }
+
+    // Add the real athletic man model to root group
+    this.group.add(model);
+
+    // Initialize animation controller with the loaded model and preloaded clips
+    const preloadedClips = PlayerAssetPool.getInstance().getClips();
+    this.animationController = new PlayerAnimationController(model, undefined, preloadedClips);
+
+    const initAnim =
+      this.equippedWeapon === 'knife' || this.equippedWeapon === 'bat'
+        ? 'sword_idle'
+        : this.equippedWeapon === 'pistol'
+        ? 'pistol_idle'
+        : this.equippedWeapon === 'rifle'
+        ? 'rifle_idle'
+        : 'idle';
+    this.animationController.playBaseLocomotion(initAnim);
+
+    // Update weapon meshes on the real model
+    this.updateWeaponMeshes(this.equippedWeapon);
+    Logger.info('PlayerController: Authoritative Athletic_man character model and skeletal animations active.');
+  }
+
+  /**
+   * Development-only debug model attachment.
+   */
+  private attachDebugModel(): void {
+    if (this.modelParts || this.athleticModel) return;
+    this.modelParts = ModelFactory.createPlayerModel();
+    this.group.add(this.modelParts.root);
+    this.updateWeaponMeshes(this.equippedWeapon);
+    Logger.info('PlayerController: Development debug mannequin model attached.');
+  }
+
+  /**
+   * Loads Athletic_man.glb character model via PlayerAssetPool and attaches it cleanly.
+   */
+  public async loadAthleticManModel(): Promise<boolean> {
+    const pool = PlayerAssetPool.getInstance();
+    const ok = await pool.preload();
+    if (ok) {
+      const model = pool.cloneModel();
+      if (model) {
+        this.attachRealModel(model);
+        return true;
+      }
+    }
+
+    // Only fallback if asset completely unavailable (e.g., offline test runner without server)
+    if (!this.athleticModel && !this.modelParts) {
+      Logger.warn('PlayerController: Athletic_man.glb unavailable, falling back to development debug model.');
+      this.attachDebugModel();
+    }
+    return false;
   }
 
   public getPosition(): THREE.Vector3 {
@@ -244,6 +305,11 @@ export class PlayerController {
   public getForwardVector(): THREE.Vector3 {
     PlayerController._scratchForward.set(0, 0, 1).applyEuler(new THREE.Euler(0, this.cameraYaw, 0));
     return PlayerController._scratchForward.normalize();
+  }
+
+  public getAimVector(): THREE.Vector3 {
+    PlayerController._scratchEuler.set(this.cameraPitch, this.cameraYaw, 0, 'YXZ');
+    return PlayerController._scratchForward.set(0, 0, 1).applyEuler(PlayerController._scratchEuler).normalize();
   }
 
   public attachWeaponMesh(weapon: WeaponType): void {
@@ -274,7 +340,7 @@ export class PlayerController {
         this.currentWeaponMesh.position.set(0, 0, 0);
         this.weaponRBone.add(this.currentWeaponMesh);
       }
-    } else {
+    } else if (this.modelParts) {
       // Fallback procedural model weapon socket
       if (this.currentWeaponMesh) {
         this.modelParts.weaponSocket.remove(this.currentWeaponMesh);
@@ -285,6 +351,12 @@ export class PlayerController {
   }
 
   public update(dt: number): void {
+    if (this.isDead) {
+      this.rigidBody.setLinvel(new RAPIER.Vector3(0, 0, 0), true);
+      this.animationController?.update(dt);
+      return;
+    }
+
     const input = this.inputManager.getState();
 
     // 1. Update Camera Yaw & Pitch from Mouse / Touch Delta
@@ -293,9 +365,10 @@ export class PlayerController {
     this.inputManager.resetFrameDeltas();
 
     // 2. Calculate Movement Direction based on Camera Orientation
-    const moveX = input.moveAxis.x;
-    const moveZ = input.moveAxis.y;
-    this.isMoving = Math.abs(moveX) > 0.05 || Math.abs(moveZ) > 0.05;
+    // In InputManager / VirtualJoystick: forward is negative Y, backward is positive Y; right is positive X, left is negative X
+    const forwardAmount = -input.moveAxis.y;
+    const rightAmount = input.moveAxis.x;
+    this.isMoving = Math.abs(forwardAmount) > 0.05 || Math.abs(rightAmount) > 0.05;
 
     // Check if sprinting
     const uiStore = useGameUIStore.getState();
@@ -308,9 +381,25 @@ export class PlayerController {
       ? this.runSpeed
       : this.walkSpeed;
 
-    // World movement vector using pre-allocated vector
-    const moveDir = PlayerController._scratchMoveDir.set(moveX, 0, moveZ);
-    moveDir.applyAxisAngle(PlayerController._scratchUp, this.cameraYaw);
+    // Horizontal forward vector (along camera yaw)
+    const forwardVec = PlayerController._scratchForward
+      .set(0, 0, 1)
+      .applyAxisAngle(PlayerController._scratchUp, this.cameraYaw);
+
+    // Horizontal right vector (orthogonal to forward and up)
+    const rightVec = PlayerController._scratchRight
+      .crossVectors(forwardVec, PlayerController._scratchUp)
+      .normalize();
+
+    // World movement vector
+    const moveDir = PlayerController._scratchMoveDir
+      .set(0, 0, 0)
+      .addScaledVector(forwardVec, forwardAmount)
+      .addScaledVector(rightVec, rightAmount);
+
+    if (moveDir.lengthSq() > 0.001) {
+      moveDir.normalize();
+    }
 
     const currentVel = this.rigidBody.linvel();
     const targetVx = moveDir.x * speed;
@@ -338,13 +427,8 @@ export class PlayerController {
     const trans = this.rigidBody.translation();
     this.group.position.set(trans.x, trans.y - 0.95, trans.z);
 
-    // Rotate player character toward movement direction when moving, or camera yaw when stationary
-    if (this.isMoving) {
-      const targetAngle = Math.atan2(targetVx, targetVz);
-      this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, targetAngle, dt * this.rotationSpeed);
-    } else {
-      this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.cameraYaw, dt * 6.0);
-    }
+    // In over-the-shoulder perspective, body smoothly aligns with camera yaw
+    this.group.rotation.y = THREE.MathUtils.lerp(this.group.rotation.y, this.cameraYaw, dt * this.rotationSpeed);
 
     // 4. Update Animations (Animation Controller if GLTF is loaded, otherwise Procedural Fallback)
     if (this.animationController) {
@@ -354,113 +438,12 @@ export class PlayerController {
         isCrouching: !!input.crouch,
         isAirborne,
         isAiming: false,
-        moveAxis: { x: moveX, y: moveZ },
+        moveAxis: { x: rightAmount, y: forwardAmount },
         weapon: this.equippedWeapon
       });
       this.animationController.update(dt);
-    } else {
-      // Procedural Fallback Animation
-      this.idleTimer += dt;
-
-      if (isAirborne) {
-        this.modelParts.leftLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftLeg.rotation.x, -0.4, dt * 10);
-        this.modelParts.rightLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightLeg.rotation.x, -0.4, dt * 10);
-        this.modelParts.leftKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftKnee.rotation.x, 0.75, dt * 10);
-        this.modelParts.rightKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightKnee.rotation.x, 0.75, dt * 10);
-        this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, -0.1, dt * 8);
-        this.modelParts.leftArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.x, -0.3, dt * 8);
-        this.modelParts.leftArm.rotation.z = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.z, -0.35, dt * 8);
-        this.modelParts.rightArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.x, -0.6, dt * 8);
-        this.modelParts.rightElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightElbow.rotation.x, 0.6, dt * 8);
-      } else if (this.isMoving) {
-        const animRate = this.isSprinting ? 15 : input.crouch ? 7.5 : 9.5;
-        this.strideTimer += dt * animRate;
-
-        const strideAmp = this.isSprinting ? 0.8 : input.crouch ? 0.35 : 0.45;
-        const kneeAmp = this.isSprinting ? 1.25 : input.crouch ? 0.6 : 0.8;
-        const armAmp = this.isSprinting ? 0.75 : input.crouch ? 0.25 : 0.45;
-        const spineLean = this.isSprinting ? 0.26 : input.crouch ? 0.35 : 0.08;
-
-        const legCycle = Math.sin(this.strideTimer);
-
-        this.modelParts.leftLeg.rotation.x = legCycle * strideAmp;
-        this.modelParts.rightLeg.rotation.x = -legCycle * strideAmp;
-
-        const baseKnee = input.crouch ? 0.65 : 0.05;
-        this.modelParts.leftKnee.rotation.x = baseKnee + (legCycle > 0 ? legCycle * kneeAmp : 0);
-        this.modelParts.rightKnee.rotation.x = baseKnee + (-legCycle > 0 ? -legCycle * kneeAmp : 0);
-
-        this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, spineLean, dt * 10);
-        this.modelParts.spine.rotation.z = Math.sin(this.strideTimer) * 0.03;
-        this.modelParts.body.rotation.y = Math.sin(this.strideTimer) * 0.05;
-
-        this.modelParts.leftArm.rotation.x = -legCycle * armAmp;
-        this.modelParts.leftArm.rotation.z = 0;
-        this.modelParts.leftElbow.rotation.x = 0.25 + Math.max(0, -legCycle) * 0.5;
-
-        if (this.meleeSwingTimer <= 0) {
-          this.modelParts.rightArm.rotation.x = -0.65 + (this.isSprinting ? Math.sin(this.strideTimer) * 0.15 : Math.sin(this.strideTimer) * 0.05);
-          this.modelParts.rightArm.rotation.y = 0;
-          this.modelParts.rightElbow.rotation.x = 0.75 + (this.isSprinting ? Math.sin(this.strideTimer) * 0.1 : 0);
-        }
-      } else {
-        this.strideTimer = 0;
-        const breath = Math.sin(this.idleTimer * 2.2);
-
-        this.modelParts.leftLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftLeg.rotation.x, 0, dt * 10);
-        this.modelParts.rightLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightLeg.rotation.x, 0, dt * 10);
-        this.modelParts.leftKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftKnee.rotation.x, input.crouch ? 0.7 : 0.05, dt * 10);
-        this.modelParts.rightKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightKnee.rotation.x, input.crouch ? 0.7 : 0.05, dt * 10);
-
-        this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, input.crouch ? 0.35 : breath * 0.015, dt * 8);
-        this.modelParts.spine.rotation.z = THREE.MathUtils.lerp(this.modelParts.spine.rotation.z, 0, dt * 8);
-        this.modelParts.body.rotation.y = THREE.MathUtils.lerp(this.modelParts.body.rotation.y, 0, dt * 8);
-
-        this.modelParts.chest.position.y = 0.35 + breath * 0.008;
-        this.modelParts.head.rotation.y = THREE.MathUtils.lerp(this.modelParts.head.rotation.y, Math.sin(this.idleTimer * 0.8) * 0.05, dt * 4);
-
-        this.modelParts.leftArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.x, 0.05, dt * 8);
-        this.modelParts.leftArm.rotation.z = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.z, 0, dt * 8);
-        this.modelParts.leftElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftElbow.rotation.x, 0.25, dt * 8);
-
-        if (this.meleeSwingTimer <= 0) {
-          this.modelParts.rightArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.x, -0.65, dt * 8);
-          this.modelParts.rightArm.rotation.y = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.y, 0, dt * 8);
-          this.modelParts.rightElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightElbow.rotation.x, 0.75, dt * 8);
-        }
-      }
-
-      // Crouch height adjustment
-      const bounce = this.isMoving ? Math.abs(Math.sin(this.strideTimer * 2)) * (this.isSprinting ? 0.05 : 0.025) : 0;
-      const targetBodyY = (input.crouch ? 0.65 : 1.0) + bounce;
-      this.modelParts.body.position.y = THREE.MathUtils.lerp(this.modelParts.body.position.y, targetBodyY, dt * 14);
-
-      // Melee swing arc
-      if (this.meleeSwingTimer > 0) {
-        this.meleeSwingTimer -= dt;
-        const swingProgress = 1 - this.meleeSwingTimer / 0.3;
-        const swingArc = Math.sin(swingProgress * Math.PI);
-        this.modelParts.rightArm.rotation.x = -Math.PI / 3 - swingArc * 0.55;
-        this.modelParts.rightArm.rotation.y = -Math.PI / 4 + swingArc * 1.3;
-        this.modelParts.rightElbow.rotation.x = 0.5 + swingArc * 0.4;
-        this.modelParts.spine.rotation.y = swingArc * 0.3;
-      } else {
-        this.modelParts.spine.rotation.y = THREE.MathUtils.lerp(this.modelParts.spine.rotation.y, 0, dt * 10);
-      }
-
-      // Gun recoil impulse
-      if (this.recoilImpulse > 0.005) {
-        this.modelParts.rightArm.rotation.x -= this.recoilImpulse;
-        this.modelParts.chest.rotation.x -= this.recoilImpulse * 0.4;
-        this.recoilImpulse = THREE.MathUtils.lerp(this.recoilImpulse, 0, dt * 14);
-      }
-
-      // Damage flinch impulse
-      if (this.flinchImpulse > 0.005) {
-        this.modelParts.spine.rotation.x -= this.flinchImpulse * 0.5;
-        this.modelParts.head.rotation.x -= this.flinchImpulse * 0.4;
-        this.flinchImpulse = THREE.MathUtils.lerp(this.flinchImpulse, 0, dt * 10);
-      }
+    } else if (this.modelParts) {
+      this.updateProceduralFallback(dt, input, isAirborne);
     }
 
     // Footstep audio rhythm
@@ -484,16 +467,64 @@ export class PlayerController {
     this.flashlightTarget.position.copy(this.group.position).addScaledVector(aimDir, 18);
     this.flashlightTarget.position.y += 1.35;
 
-    // 6. Update Third-Person Over-the-Shoulder Camera
+    // 6. Update Third-Person Over-the-Shoulder Camera with Dynamic Collision & Obstruction Avoidance
     const cam = this.cameraManager.camera;
     const camPivot = PlayerController._scratchCamPivot.copy(this.group.position);
     camPivot.y += 1.45; // Shoulder & eye level pivot
 
-    // Calculate rotated camera position behind player
+    // Calculate rotated full camera offset behind player
     const offset = PlayerController._scratchOffset.copy(this.cameraOffset);
-    offset.applyEuler(PlayerController._scratchEuler);
+    this.maxCameraDistance = offset.length(); // ~2.35m
 
-    const desiredCamPos = PlayerController._scratchDesiredCam.copy(camPivot).add(offset);
+    offset.applyEuler(PlayerController._scratchEuler);
+    const camRayDir = PlayerController._scratchCamRayDir.copy(offset).normalize();
+
+    // Query physics world for obstacle collisions along the camera arm
+    const safeDistance = this.physicsWorld.cameraCollisionQuery(
+      camPivot,
+      camRayDir,
+      this.maxCameraDistance,
+      0.20,
+      this.rigidBody,
+      this.collider
+    );
+
+    // Asymmetric camera distance smoothing:
+    // Fast pull-in when encountering an obstacle to prevent wall penetration;
+    // Smooth, gentle ease-out when moving back into open space.
+    if (safeDistance < this.currentCameraDistance) {
+      // Rapid obstacle avoidance
+      this.currentCameraDistance = THREE.MathUtils.lerp(
+        this.currentCameraDistance,
+        safeDistance,
+        Math.min(1.0, dt * 25.0)
+      );
+      if (this.currentCameraDistance > safeDistance) {
+        this.currentCameraDistance = safeDistance;
+      }
+    } else {
+      // Smooth return to preferred distance
+      this.currentCameraDistance = THREE.MathUtils.lerp(
+        this.currentCameraDistance,
+        safeDistance,
+        Math.min(1.0, dt * 7.5)
+      );
+    }
+
+    // Scale rotated offset by current collision-safe distance
+    const effectiveOffset = PlayerController._scratchOffset.copy(camRayDir).multiplyScalar(this.currentCameraDistance);
+
+    // If camera is forced very close to the player, smoothly nudge shoulder offset outward and upward
+    // so the player's head does not obscure the crosshair
+    if (this.currentCameraDistance < 1.2) {
+      const closeT = (1.2 - this.currentCameraDistance) / (1.2 - 0.55);
+      const rightNudge = PlayerController._scratchCamRightNudge
+        .set(-0.16 * closeT, 0.12 * closeT, 0)
+        .applyEuler(PlayerController._scratchEuler);
+      effectiveOffset.add(rightNudge);
+    }
+
+    const desiredCamPos = PlayerController._scratchDesiredCam.copy(camPivot).add(effectiveOffset);
 
     // Aim target 30m down the crosshair line of sight
     const lookAtPoint = PlayerController._scratchLookAt.copy(camPivot).addScaledVector(aimDir, 30);
@@ -504,11 +535,119 @@ export class PlayerController {
       cam.position.copy(desiredCamPos);
       cam.lookAt(lookAtPoint);
     } else {
-      cam.position.lerp(desiredCamPos, Math.min(1.0, dt * 16));
+      cam.position.lerp(desiredCamPos, Math.min(1.0, dt * 18));
       cam.lookAt(lookAtPoint);
     }
 
     this.cameraManager.update(dt);
+  }
+
+  /**
+   * Procedural animation loop used strictly as an offline or dev-only fallback.
+   */
+  private updateProceduralFallback(dt: number, input: any, isAirborne: boolean): void {
+    if (!this.modelParts) return;
+    this.idleTimer += dt;
+
+    if (isAirborne) {
+      this.modelParts.leftLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftLeg.rotation.x, -0.4, dt * 10);
+      this.modelParts.rightLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightLeg.rotation.x, -0.4, dt * 10);
+      this.modelParts.leftKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftKnee.rotation.x, 0.75, dt * 10);
+      this.modelParts.rightKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightKnee.rotation.x, 0.75, dt * 10);
+      this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, -0.1, dt * 8);
+      this.modelParts.leftArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.x, -0.3, dt * 8);
+      this.modelParts.leftArm.rotation.z = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.z, -0.35, dt * 8);
+      this.modelParts.rightArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.x, -0.6, dt * 8);
+      this.modelParts.rightElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightElbow.rotation.x, 0.6, dt * 8);
+    } else if (this.isMoving) {
+      const animRate = this.isSprinting ? 15 : input.crouch ? 7.5 : 9.5;
+      this.strideTimer += dt * animRate;
+
+      const strideAmp = this.isSprinting ? 0.8 : input.crouch ? 0.35 : 0.45;
+      const kneeAmp = this.isSprinting ? 1.25 : input.crouch ? 0.6 : 0.8;
+      const armAmp = this.isSprinting ? 0.75 : input.crouch ? 0.25 : 0.45;
+      const spineLean = this.isSprinting ? 0.26 : input.crouch ? 0.35 : 0.08;
+
+      const legCycle = Math.sin(this.strideTimer);
+
+      this.modelParts.leftLeg.rotation.x = legCycle * strideAmp;
+      this.modelParts.rightLeg.rotation.x = -legCycle * strideAmp;
+
+      const baseKnee = input.crouch ? 0.65 : 0.05;
+      this.modelParts.leftKnee.rotation.x = baseKnee + (legCycle > 0 ? legCycle * kneeAmp : 0);
+      this.modelParts.rightKnee.rotation.x = baseKnee + (-legCycle > 0 ? -legCycle * kneeAmp : 0);
+
+      this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, spineLean, dt * 10);
+      this.modelParts.spine.rotation.z = Math.sin(this.strideTimer) * 0.03;
+      this.modelParts.body.rotation.y = Math.sin(this.strideTimer) * 0.05;
+
+      this.modelParts.leftArm.rotation.x = -legCycle * armAmp;
+      this.modelParts.leftArm.rotation.z = 0;
+      this.modelParts.leftElbow.rotation.x = 0.25 + Math.max(0, -legCycle) * 0.5;
+
+      if (this.meleeSwingTimer <= 0) {
+        this.modelParts.rightArm.rotation.x = -0.65 + (this.isSprinting ? Math.sin(this.strideTimer) * 0.15 : Math.sin(this.strideTimer) * 0.05);
+        this.modelParts.rightArm.rotation.y = 0;
+        this.modelParts.rightElbow.rotation.x = 0.75 + (this.isSprinting ? Math.sin(this.strideTimer) * 0.1 : 0);
+      }
+    } else {
+      this.strideTimer = 0;
+      const breath = Math.sin(this.idleTimer * 2.2);
+
+      this.modelParts.leftLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftLeg.rotation.x, 0, dt * 10);
+      this.modelParts.rightLeg.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightLeg.rotation.x, 0, dt * 10);
+      this.modelParts.leftKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftKnee.rotation.x, input.crouch ? 0.7 : 0.05, dt * 10);
+      this.modelParts.rightKnee.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightKnee.rotation.x, input.crouch ? 0.7 : 0.05, dt * 10);
+
+      this.modelParts.spine.rotation.x = THREE.MathUtils.lerp(this.modelParts.spine.rotation.x, input.crouch ? 0.35 : breath * 0.015, dt * 8);
+      this.modelParts.spine.rotation.z = THREE.MathUtils.lerp(this.modelParts.spine.rotation.z, 0, dt * 8);
+      this.modelParts.body.rotation.y = THREE.MathUtils.lerp(this.modelParts.body.rotation.y, 0, dt * 8);
+
+      this.modelParts.chest.position.y = 0.35 + breath * 0.008;
+      this.modelParts.head.rotation.y = THREE.MathUtils.lerp(this.modelParts.head.rotation.y, Math.sin(this.idleTimer * 0.8) * 0.05, dt * 4);
+
+      this.modelParts.leftArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.x, 0.05, dt * 8);
+      this.modelParts.leftArm.rotation.z = THREE.MathUtils.lerp(this.modelParts.leftArm.rotation.z, 0, dt * 8);
+      this.modelParts.leftElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.leftElbow.rotation.x, 0.25, dt * 8);
+
+      if (this.meleeSwingTimer <= 0) {
+        this.modelParts.rightArm.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.x, -0.65, dt * 8);
+        this.modelParts.rightArm.rotation.y = THREE.MathUtils.lerp(this.modelParts.rightArm.rotation.y, 0, dt * 8);
+        this.modelParts.rightElbow.rotation.x = THREE.MathUtils.lerp(this.modelParts.rightElbow.rotation.x, 0.75, dt * 8);
+      }
+    }
+
+    // Crouch height adjustment
+    const bounce = this.isMoving ? Math.abs(Math.sin(this.strideTimer * 2)) * (this.isSprinting ? 0.05 : 0.025) : 0;
+    const targetBodyY = (input.crouch ? 0.65 : 1.0) + bounce;
+    this.modelParts.body.position.y = THREE.MathUtils.lerp(this.modelParts.body.position.y, targetBodyY, dt * 14);
+
+    // Melee swing arc
+    if (this.meleeSwingTimer > 0) {
+      this.meleeSwingTimer -= dt;
+      const swingProgress = 1 - this.meleeSwingTimer / 0.3;
+      const swingArc = Math.sin(swingProgress * Math.PI);
+      this.modelParts.rightArm.rotation.x = -Math.PI / 3 - swingArc * 0.55;
+      this.modelParts.rightArm.rotation.y = -Math.PI / 4 + swingArc * 1.3;
+      this.modelParts.rightElbow.rotation.x = 0.5 + swingArc * 0.4;
+      this.modelParts.spine.rotation.y = swingArc * 0.3;
+    } else {
+      this.modelParts.spine.rotation.y = THREE.MathUtils.lerp(this.modelParts.spine.rotation.y, 0, dt * 10);
+    }
+
+    // Gun recoil impulse
+    if (this.recoilImpulse > 0.005) {
+      this.modelParts.rightArm.rotation.x -= this.recoilImpulse;
+      this.modelParts.chest.rotation.x -= this.recoilImpulse * 0.4;
+      this.recoilImpulse = THREE.MathUtils.lerp(this.recoilImpulse, 0, dt * 14);
+    }
+
+    // Damage flinch impulse
+    if (this.flinchImpulse > 0.005) {
+      this.modelParts.spine.rotation.x -= this.flinchImpulse * 0.5;
+      this.modelParts.head.rotation.x -= this.flinchImpulse * 0.4;
+      this.flinchImpulse = THREE.MathUtils.lerp(this.flinchImpulse, 0, dt * 10);
+    }
   }
 
   public dispose(): void {

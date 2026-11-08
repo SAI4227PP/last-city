@@ -98,13 +98,14 @@ export class CinematicScene extends BaseScene {
     this.scene.add(sign);
 
     // Flashing emergency lights
-    this.emergencyLight = new THREE.PointLight(0xe53e3e, 3, 30);
+    this.emergencyLight = new THREE.PointLight(0xe53e3e, 3.5, 32);
     this.emergencyLight.position.set(0, 4, -8);
     this.scene.add(this.emergencyLight);
 
-    // Ambient light
-    const amb = new THREE.AmbientLight(0x0d141e, 1.5);
-    this.scene.add(amb);
+    // Natural Sky & Ambient Lighting
+    const hemi = new THREE.HemisphereLight(0x789bb8, 0x22303d, 1.5);
+    const amb = new THREE.AmbientLight(0x608098, 1.4);
+    this.scene.add(hemi, amb);
 
     // Cinematic background infected silhouettes prowling the street
     const z1 = ModelFactory.createZombieModel('walker');

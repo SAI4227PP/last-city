@@ -342,3 +342,196 @@
   background: var(--color-accent-amber);
   color: #000;
 }
+
+/* Quick Weapon Slots Bar */
+.weapon-slots-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  pointer-events: auto;
+  user-select: none;
+  margin: 0 16px;
+}
+
+.weapon-slot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(13, 17, 23, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(8px);
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 58px;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.weapon-slot-card:hover:not(.locked) {
+  border-color: rgba(255, 255, 255, 0.45);
+  background: rgba(26, 32, 44, 0.9);
+  transform: translateY(-2px);
+}
+
+.weapon-slot-card.active {
+  border-color: var(--color-accent-amber, #ecc94b);
+  box-shadow: 0 0 12px rgba(236, 201, 75, 0.45);
+  background: rgba(45, 55, 72, 0.9);
+}
+
+.weapon-slot-card.locked {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.weapon-slot-num {
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--color-text-secondary, #a0aec0);
+  font-family: var(--font-mono);
+}
+
+.weapon-slot-icon {
+  font-size: 20px;
+  margin-top: 4px;
+  line-height: 1;
+}
+
+.weapon-slot-ammo {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: #edf2f7;
+  margin-top: 2px;
+}
+
+.weapon-slot-reload {
+  font-size: 9px;
+  font-weight: 800;
+  color: #f6ad55;
+  animation: pulseReload 0.8s infinite;
+}
+
+@keyframes pulseReload {
+  0% { opacity: 0.35; }
+  50% { opacity: 1; }
+  100% { opacity: 0.35; }
+}
+
+/* Floating Damage Numbers */
+.damage-numbers-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 100;
+}
+
+.floating-damage-number {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-family: var(--font-mono);
+  font-weight: 900;
+  font-size: 19px;
+  color: #ff3333;
+  text-shadow: 0 0 4px #000, 0 0 8px rgba(255, 0, 0, 0.8);
+  pointer-events: none;
+  animation: floatDamageNumber 0.85s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+
+.floating-damage-number.headshot {
+  color: #ffcc00;
+  font-size: 25px;
+  text-shadow: 0 0 6px #000, 0 0 12px rgba(255, 200, 0, 0.95);
+}
+
+@keyframes floatDamageNumber {
+  0% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(0.7);
+  }
+  20% {
+    transform: translate(-50%, -15px) scale(1.25);
+  }
+  80% {
+    opacity: 0.9;
+    transform: translate(-50%, -35px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50px) scale(0.9);
+  }
+}
+
+/* Enemy Target Health & Blood Bar */
+.enemy-target-hud {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 300px;
+  background: rgba(10, 14, 22, 0.92);
+  border: 1px solid rgba(229, 62, 62, 0.55);
+  box-shadow: 0 0 16px rgba(229, 62, 62, 0.35);
+  backdrop-filter: blur(8px);
+  padding: 8px 16px;
+  border-radius: 8px;
+  z-index: 80;
+  pointer-events: none;
+  animation: fadeInTarget 0.2s ease;
+}
+
+@keyframes fadeInTarget {
+  from { opacity: 0; transform: translate(-50%, -8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.enemy-target-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 5px;
+}
+
+.enemy-target-name {
+  color: #edf2f7;
+  letter-spacing: 1px;
+}
+
+.enemy-target-blood-text {
+  color: #ff4d4d;
+  font-family: var(--font-mono);
+  font-weight: 900;
+}
+
+.enemy-target-bar-bg {
+  width: 100%;
+  height: 10px;
+  background: rgba(35, 10, 10, 0.85);
+  border-radius: 5px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.enemy-target-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #990c0c, #ff2222);
+  box-shadow: 0 0 10px rgba(255, 34, 34, 0.75);
+  border-radius: 5px;
+  transition: width 0.15s ease;
+}

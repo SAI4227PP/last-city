@@ -5,6 +5,7 @@ import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { EventBus } from '@/core/events/EventBus';
 import { Logger } from '@/core/utils/Logger';
 import { DisposableManager } from '@/core/utils/Disposable';
+import { PlayerAssetPool } from '@/features/player/PlayerAssetPool';
 
 export class SceneManager {
   private engine: GameEngine;
@@ -59,12 +60,24 @@ export class SceneManager {
 
     // 2. Ensure physics engine is initialized for gameplay stages
     if (stageId !== 'main-menu' && stageId !== 'cinematic') {
-      useGameUIStore.getState().setLoadingScreen({ progress: 45, statusText: 'Initializing Rapier physics...' });
+      useGameUIStore.getState().setLoadingScreen({ progress: 35, statusText: 'Initializing Rapier physics...' });
       await this.engine.physicsWorld.initWorld();
+
+      // Preload authoritative Athletic_man player character model and core animations
+      useGameUIStore.getState().setLoadingScreen({
+        progress: 55,
+        statusText: 'Streaming survivor character (Athletic Man)...'
+      });
+      await PlayerAssetPool.getInstance().preload((prog, text) => {
+        useGameUIStore.getState().setLoadingScreen({
+          progress: 55 + Math.round(prog * 0.3), // 55% -> 85%
+          statusText: text
+        });
+      });
     }
 
     // 3. Dynamically import target scene (Enables Code Splitting & on-demand loading)
-    useGameUIStore.getState().setLoadingScreen({ progress: 70, statusText: 'Compiling shaders & entities...' });
+    useGameUIStore.getState().setLoadingScreen({ progress: 88, statusText: 'Compiling shaders & entities...' });
     let newScene: BaseScene;
 
     try {

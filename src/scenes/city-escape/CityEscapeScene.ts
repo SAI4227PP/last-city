@@ -45,8 +45,8 @@ export class CityEscapeScene extends BaseScene {
   }
 
   public async init(): Promise<void> {
-    this.scene.background = new THREE.Color(0x06090e);
-    this.scene.fog = new THREE.FogExp2(0x06090e, 0.022);
+    this.scene.background = new THREE.Color(0x788a98);
+    this.scene.fog = new THREE.FogExp2(0x788a98, 0.008);
 
     // 1. Subsystems
     this.survivalSystem = new SurvivalSystem();
@@ -69,6 +69,8 @@ export class CityEscapeScene extends BaseScene {
       this.engine.cameraManager,
       startPos
     );
+    await this.player.init();
+    this.zombieManager.setPlayer(this.player);
 
     // Equip knife
     this.inventoryManager.addItem('item_knife', 1);
@@ -89,6 +91,12 @@ export class CityEscapeScene extends BaseScene {
         this.currentInteractable.onInteract();
       }
     };
+    this.engine.inputManager.onReloadPressed = () => {
+      this.combatManager.reload();
+    };
+    this.engine.inputManager.onWeaponSlotPressed = (slot) => {
+      this.combatManager.equipSlot(slot);
+    };
 
     // UI & Audio
     useGameUIStore.getState().setStage('city-escape');
@@ -97,9 +105,9 @@ export class CityEscapeScene extends BaseScene {
   }
 
   private buildCityEnvironment(): void {
-    const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x14181e, roughness: 0.9 });
-    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x2d343f, roughness: 0.8 });
-    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x121720, roughness: 0.95 });
+    const asphaltMat = new THREE.MeshStandardMaterial({ color: 0x3c4652, roughness: 0.85 });
+    const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x6a7785, roughness: 0.75 });
+    const buildingMat = new THREE.MeshStandardMaterial({ color: 0x4e5b69, roughness: 0.88 });
 
     // Main Road (Width 24m, Length 100m)
     const road = new THREE.Mesh(new THREE.PlaneGeometry(24, 100), asphaltMat);
@@ -178,16 +186,20 @@ export class CityEscapeScene extends BaseScene {
       this.engine.physicsWorld.createStaticBox(new THREE.Vector3(22, 14, z), new THREE.Vector3(6, 14, 8));
     }
 
-    // Moonlight with adaptive shadow resolution
+    // Realistic Overcast Daylight with adaptive shadow resolution
     const perfConfig = PerformanceManager.getInstance().getConfig();
-    const moon = new THREE.DirectionalLight(0x527291, 1.6);
-    moon.position.set(25, 45, 10);
-    moon.castShadow = perfConfig.shadows;
-    moon.shadow.mapSize.width = perfConfig.shadowMapSize;
-    moon.shadow.mapSize.height = perfConfig.shadowMapSize;
-    this.scene.add(moon);
+    const sun = new THREE.DirectionalLight(0xf5ebe0, 2.6);
+    sun.position.set(25, 45, 10);
+    sun.castShadow = perfConfig.shadows;
+    sun.shadow.mapSize.width = perfConfig.shadowMapSize;
+    sun.shadow.mapSize.height = perfConfig.shadowMapSize;
+    this.scene.add(sun);
 
-    const ambient = new THREE.AmbientLight(0x0c141d, 1.1);
+    // Natural Sky & Ground Bounce
+    const hemiLight = new THREE.HemisphereLight(0xb4c8d8, 0x5a6369, 1.8);
+    this.scene.add(hemiLight);
+
+    const ambient = new THREE.AmbientLight(0xd4e2ec, 1.25);
     this.scene.add(ambient);
 
     // Props: Abandoned Police Cruiser in Courtyard (Z = 8)
@@ -301,12 +313,12 @@ export class CityEscapeScene extends BaseScene {
     this.survivalSystem.update(dt, this.player.isSprinting);
     this.combatManager.update(dt);
 
-    if (this.engine.inputManager.getState().attack) {
-      this.combatManager.attack(playerPos, this.player.getForwardVector());
+    if (!this.player.isDead && this.engine.inputManager.getState().attack) {
+      this.combatManager.attack(playerPos, this.player.getAimVector());
     }
 
     // 2. Update Zombie AI
-    this.zombieManager.update(dt, playerPos);
+    this.zombieManager.update(dt, playerPos, this.engine.cameraManager.camera, this.player.isDead);
 
     // 3. Update Fire & Smoke Particles
     this.particleSystem.spawnFireSparks(this.burningCarPos, 3);

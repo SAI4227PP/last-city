@@ -31,10 +31,20 @@ export class PlayerAnimationController {
 
   private readonly assetBasePath = '/assets/characters/player/animations/';
 
-  constructor(root: THREE.Object3D, mixer?: THREE.AnimationMixer) {
+  constructor(
+    root: THREE.Object3D,
+    mixer?: THREE.AnimationMixer,
+    initialClips?: Map<PlayerAnimationId, THREE.AnimationClip>
+  ) {
     this.root = root;
     this.mixer = mixer ?? new THREE.AnimationMixer(this.root);
     this.loader = new GLTFLoader();
+
+    if (initialClips) {
+      for (const [id, clip] of initialClips.entries()) {
+        this.clips.set(id, clip);
+      }
+    }
 
     // Hook up mixer finish listener to restore base locomotion after one-shots
     this.mixer.addEventListener('finished', (e: any) => {

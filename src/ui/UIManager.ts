@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { useGameUIStore } from '@/ui/store/gameUIStore';
 import { GameEngine } from '@/core/engine/GameEngine';
 import { AudioManager } from '@/core/audio/AudioManager';
@@ -90,11 +91,30 @@ export class UIManager {
       <div id="game-hud" class="hud-container" style="display: none;">
         <div id="crosshair" class="crosshair"></div>
 
+        <!-- DAMAGE & HEALTH VIGNETTES -->
+        <div id="damage-vignette" class="damage-vignette"></div>
+        <div id="low-health-vignette" class="low-health-vignette"></div>
+        <div id="damage-numbers-container" class="damage-numbers-container"></div>
+
+        <!-- TARGET ENEMY HEALTH & BLOOD BAR (Top Center) -->
+        <div id="enemy-target-hud" class="enemy-target-hud" style="display: none;">
+          <div class="enemy-target-header">
+            <span id="enemy-target-name" class="enemy-target-name">🧟 INFECTED SHAMBLER</span>
+            <span id="enemy-target-blood-text" class="enemy-target-blood-text">BLOOD: 100 / 100</span>
+          </div>
+          <div class="enemy-target-bar-bg">
+            <div id="enemy-target-bar-fill" class="enemy-target-bar-fill" style="width: 100%;"></div>
+          </div>
+        </div>
+
         <!-- Top HUD -->
         <div class="top-hud">
-          <div class="mission-tracker">
-            <div id="hud-mission-title" class="mission-title">AWAKENING</div>
-            <div id="hud-mission-objective" class="objective-text">Survey your surroundings</div>
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <button id="btn-hud-controls" class="menu-btn interactive" style="width: auto; padding: 5px 12px; font-size: 11px; margin: 0; background: rgba(13,17,23,0.85); border: 1px solid rgba(255,255,255,0.25); cursor: pointer;">❓ CONTROLS [H]</button>
+            <div class="mission-tracker">
+              <div id="hud-mission-title" class="mission-title">AWAKENING</div>
+              <div id="hud-mission-objective" class="objective-text">Survey your surroundings</div>
+            </div>
           </div>
           <div id="hud-stage-badge" class="stage-badge">ST. JUDE HOSPITAL</div>
         </div>
@@ -143,13 +163,16 @@ export class UIManager {
             </div>
           </div>
 
+          <!-- Quick Weapon Slots Bar -->
+          <div id="weapon-slots-bar" class="weapon-slots-bar"></div>
+
           <!-- Weapon Panel -->
           <div class="weapon-panel">
             <div class="weapon-info">
               <div id="weapon-name" class="weapon-name">Combat Knife</div>
               <div id="weapon-ammo-display" class="weapon-ammo">-- / --</div>
             </div>
-            <div style="font-size: 26px;">🗡️</div>
+            <div id="weapon-icon-display" style="font-size: 26px;">🗡️</div>
           </div>
         </div>
 
@@ -207,9 +230,48 @@ export class UIManager {
           <div class="menu-nav">
             <button id="btn-resume" class="menu-btn primary">RESUME EXPEDITION</button>
             <button id="btn-manual-save" class="menu-btn">SAVE PROGRESSION</button>
+            <button id="btn-pause-controls" class="menu-btn">CONTROLS & SHORTCUTS</button>
             <button id="btn-pause-settings" class="menu-btn">SETTINGS & PERFORMANCE</button>
             <button id="btn-quit-menu" class="menu-btn">RETURN TO MAIN MENU</button>
           </div>
+        </div>
+      </div>
+
+      <!-- CONTROLS & SHORTCUTS MODAL -->
+      <div id="controls-modal" class="modal-backdrop interactive" style="display: none;">
+        <div class="inventory-modal" style="max-width: 580px; padding: 24px;">
+          <div class="modal-header">
+            <h3>GAMEPLAY CONTROLS & SHORTCUTS</h3>
+            <button id="btn-close-controls" class="menu-btn" style="width: auto; padding: 4px 14px;">✕ CLOSE</button>
+          </div>
+          <div style="padding: 16px 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 13px;">
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px;">
+              <strong style="color: #ecc94b;">MOVEMENT</strong><br/>
+              <span style="color: #a0aec0;">W / A / S / D</span> : Move character<br/>
+              <span style="color: #a0aec0;">Left Shift</span> : Sprint<br/>
+              <span style="color: #a0aec0;">Space</span> : Jump<br/>
+              <span style="color: #a0aec0;">C / Ctrl</span> : Crouch
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px;">
+              <strong style="color: #ecc94b;">COMBAT & WEAPONS</strong><br/>
+              <span style="color: #a0aec0;">Left Mouse</span> : Attack / Fire<br/>
+              <span style="color: #a0aec0;">Right Mouse</span> : Aim weapon<br/>
+              <span style="color: #a0aec0;">R</span> : Reload gun<br/>
+              <span style="color: #a0aec0;">1 - 5</span> : Quick switch weapon
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px;">
+              <strong style="color: #ecc94b;">INTERACTION</strong><br/>
+              <span style="color: #a0aec0;">E</span> : Search containers / doors<br/>
+              <span style="color: #a0aec0;">Tab</span> : Open Inventory / Crafting
+            </div>
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 6px;">
+              <strong style="color: #ecc94b;">SYSTEM & SHORTCUTS</strong><br/>
+              <span style="color: #a0aec0;">Esc</span> : Pause menu / Options<br/>
+              <span style="color: #a0aec0;">H</span> : View Controls Guide<br/>
+              <span style="color: #a0aec0;">Click Canvas</span> : Lock mouse
+            </div>
+          </div>
+          <button id="btn-controls-ok" class="menu-btn primary" style="margin-top: 10px;">GOT IT</button>
         </div>
       </div>
 
@@ -616,6 +678,108 @@ export class UIManager {
 
     // Mobile Virtual Touch Joystick
     this.setupMobileJoystick();
+
+    // Controls modal
+    const openControls = () => {
+      document.getElementById('controls-modal')!.style.display = 'flex';
+      this.engine.inputManager.exitPointerLock();
+    };
+
+    const closeControls = () => {
+      document.getElementById('controls-modal')!.style.display = 'none';
+      const state = useGameUIStore.getState();
+      if (!state.isPaused && !state.showInventory && !state.showSettings) {
+        this.engine.inputManager.requestPointerLock();
+      }
+    };
+
+    document.getElementById('btn-hud-controls')?.addEventListener('click', openControls);
+    document.getElementById('btn-pause-controls')?.addEventListener('click', openControls);
+    document.getElementById('btn-close-controls')?.addEventListener('click', closeControls);
+    document.getElementById('btn-controls-ok')?.addEventListener('click', closeControls);
+
+    this.engine.inputManager.onControlsPressed = () => {
+      const modal = document.getElementById('controls-modal');
+      if (modal && modal.style.display === 'flex') {
+        closeControls();
+      } else {
+        openControls();
+      }
+    };
+
+    // Blood and damage feedback
+    EventBus.getInstance().on('player:damage', () => {
+      const vignette = document.getElementById('damage-vignette');
+      if (vignette) {
+        vignette.style.opacity = '0.9';
+        setTimeout(() => {
+          vignette.style.opacity = '0';
+        }, 280);
+      }
+    });
+
+    // Floating damage numbers and enemy target blood bar on zombie hits
+    let enemyTargetHideTimeout: any = null;
+
+    EventBus.getInstance().on('combat:damage_number', (data: {
+      amount: number;
+      position: [number, number, number];
+      isHeadshot: boolean;
+      hitLocation?: string;
+      armorReduced?: number;
+      remainingHealth?: number;
+      maxHealth?: number;
+      targetName?: string;
+    }) => {
+      // 1. Update Top-Center Enemy Target Blood HUD
+      const targetHud = document.getElementById('enemy-target-hud');
+      const targetName = document.getElementById('enemy-target-name');
+      const bloodText = document.getElementById('enemy-target-blood-text');
+      const bloodFill = document.getElementById('enemy-target-bar-fill');
+
+      if (targetHud && data.remainingHealth !== undefined && data.maxHealth) {
+        targetHud.style.display = 'flex';
+        if (targetName) targetName.innerText = `🧟 ${(data.targetName || 'ZOMBIE').toUpperCase()}`;
+        if (bloodText) bloodText.innerText = `BLOOD: ${Math.round(data.remainingHealth)} / ${data.maxHealth}`;
+        if (bloodFill) {
+          const pct = Math.max(0, Math.min(100, (data.remainingHealth / data.maxHealth) * 100));
+          bloodFill.style.width = `${pct}%`;
+        }
+
+        clearTimeout(enemyTargetHideTimeout);
+        enemyTargetHideTimeout = setTimeout(() => {
+          if (targetHud) targetHud.style.display = 'none';
+        }, 4000);
+      }
+
+      // 2. Floating Damage Numbers on Screen
+      const container = document.getElementById('damage-numbers-container');
+      const camera = this.engine.cameraManager.camera;
+      if (!container || !camera) return;
+
+      const pos = new THREE.Vector3(data.position[0], data.position[1] + 0.35, data.position[2]);
+      pos.project(camera);
+
+      // Only display if in front of camera
+      if (pos.z >= -1.0 && pos.z <= 1.0) {
+        const jitterX = (Math.random() - 0.5) * 40;
+        const x = (pos.x * 0.5 + 0.5) * window.innerWidth + jitterX;
+        const y = (-(pos.y * 0.5) + 0.5) * window.innerHeight;
+
+        const el = document.createElement('div');
+        el.className = `floating-damage-number ${data.isHeadshot ? 'headshot' : ''}`;
+        el.style.left = `${x}px`;
+        el.style.top = `${y}px`;
+        el.innerText = data.isHeadshot ? `💥 CRIT -${data.amount}` : `-${data.amount}`;
+        container.appendChild(el);
+
+        setTimeout(() => {
+          if (el.parentNode === container) {
+            container.removeChild(el);
+          }
+        }, 850);
+      }
+    });
   }
 
   private setupMobileJoystick(): void {
@@ -732,6 +896,35 @@ export class UIManager {
     }
 
     if (isGameplay) {
+      // Low health pulsing vignette
+      const lowHealthEl = document.getElementById('low-health-vignette');
+      if (lowHealthEl) {
+        lowHealthEl.style.opacity = state.vitals.health <= 25 ? '1' : '0';
+      }
+
+      // Quick Weapon Slots Bar
+      const slotsBar = document.getElementById('weapon-slots-bar');
+      if (slotsBar && state.weapon.slots) {
+        slotsBar.innerHTML = state.weapon.slots.map((slot) => `
+          <div class="weapon-slot-card ${slot.isEquipped ? 'active' : ''} ${!slot.isUnlocked ? 'locked' : ''}" data-slot="${slot.slot}">
+            <span class="weapon-slot-num">${slot.slot}</span>
+            <span class="weapon-slot-icon">${slot.icon}</span>
+            <span class="weapon-slot-ammo">${slot.isUnlocked ? slot.ammoText : '🔒'}</span>
+            ${slot.isEquipped && state.weapon.isReloading ? '<span class="weapon-slot-reload">RELOAD</span>' : ''}
+          </div>
+        `).join('');
+
+        slotsBar.querySelectorAll('.weapon-slot-card').forEach((card) => {
+          card.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const slotNum = parseInt((e.currentTarget as HTMLElement).getAttribute('data-slot') || '0', 10);
+            if (slotNum > 0) {
+              EventBus.getInstance().emit('weapon:select_slot', { slot: slotNum });
+            }
+          });
+        });
+      }
+
       // Vitals Bars
       document.getElementById('bar-health')!.style.width = `${state.vitals.health}%`;
       document.getElementById('num-health')!.innerText = `${Math.round(state.vitals.health)}`;
@@ -747,9 +940,30 @@ export class UIManager {
 
       // Weapon Info
       document.getElementById('weapon-name')!.innerText = state.weapon.name;
-      document.getElementById('weapon-ammo-display')!.innerText = state.weapon.isRanged
-        ? `${state.weapon.currentAmmo} / ${state.weapon.reserveAmmo}`
-        : 'READY';
+      const ammoDisplay = document.getElementById('weapon-ammo-display');
+      if (ammoDisplay) {
+        if (state.weapon.isReloading) {
+          ammoDisplay.innerText = 'RELOADING...';
+          ammoDisplay.style.color = '#f6ad55';
+        } else {
+          ammoDisplay.innerText = state.weapon.isRanged
+            ? `${state.weapon.currentAmmo} / ${state.weapon.reserveAmmo}`
+            : 'READY';
+          ammoDisplay.style.color = 'var(--color-accent-amber)';
+        }
+      }
+
+      const iconMap: Record<string, string> = {
+        knife: '🗡️',
+        pistol: '🔫',
+        shotgun: '💥',
+        rifle: '🎯',
+        bat: '🏏'
+      };
+      const iconDisplay = document.getElementById('weapon-icon-display');
+      if (iconDisplay && state.weapon.id) {
+        iconDisplay.innerText = iconMap[state.weapon.id] || '🗡️';
+      }
 
       // Mission tracker
       document.getElementById('hud-mission-title')!.innerText = state.activeMission.title;

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { PhysicsWorld } from '@/core/physics/PhysicsWorld';
+import { Logger } from '@/core/utils/Logger';
 import { HOSPITAL_LEVEL_CONFIG, WallSegment, PropDef } from './HospitalLevelConfig';
 
 export class HospitalEnvironment {
@@ -7,6 +10,7 @@ export class HospitalEnvironment {
   private physicsWorld: PhysicsWorld;
   private environmentGroup: THREE.Group;
   private colliders: any[] = [];
+  private loader: GLTFLoader = new GLTFLoader();
 
   // Shared Materials
   private wallMat!: THREE.MeshStandardMaterial;
@@ -18,10 +22,19 @@ export class HospitalEnvironment {
   private chromeMat!: THREE.MeshStandardMaterial;
   private glassMat!: THREE.MeshStandardMaterial;
   private fabricMat!: THREE.MeshStandardMaterial;
+  private curtainMat!: THREE.MeshStandardMaterial;
+  private windowFrameMat!: THREE.MeshStandardMaterial;
+  private windowGlassMat!: THREE.MeshStandardMaterial;
+  private tankMat!: THREE.MeshStandardMaterial;
+  private crateMat!: THREE.MeshStandardMaterial;
   private redPlasticMat!: THREE.MeshStandardMaterial;
   private screenEcgMat!: THREE.MeshBasicMaterial;
   private screenCctvMat!: THREE.MeshBasicMaterial;
   private signMat!: THREE.MeshStandardMaterial;
+
+  // Real GLB Assets
+  private bedGlbModel: THREE.Object3D | null = null;
+  private bedPlaceholders: THREE.Group[] = [];
 
   constructor(scene: THREE.Scene, physicsWorld: PhysicsWorld) {
     this.scene = scene;
@@ -34,69 +47,69 @@ export class HospitalEnvironment {
   }
 
   private initMaterials(): void {
-    // Wall material: Off-white/pale sage hospital drywall
+    // Wall material: Realistic bright clinical off-white hospital drywall with subtle sage tone
     this.wallMat = new THREE.MeshStandardMaterial({
-      color: 0x242d36,
-      roughness: 0.85,
-      metalness: 0.1
+      color: 0xc8d5de,
+      roughness: 0.72,
+      metalness: 0.04
     });
 
-    // Floor material: Scuffed hospital vinyl/linoleum tile
+    // Floor material: Scuffed clinical hospital vinyl / linoleum tile (soft reflective sheen)
     this.floorMat = new THREE.MeshStandardMaterial({
-      color: 0x2b3744,
+      color: 0x7a8b98,
       roughness: 0.35,
-      metalness: 0.25
+      metalness: 0.12
     });
 
-    // Ward tile floor: Slightly lighter clinical teal-gray
+    // Ward tile floor: Slightly lighter clinical teal-gray surgical tile
     this.tileTileMat = new THREE.MeshStandardMaterial({
-      color: 0x20323c,
-      roughness: 0.3,
-      metalness: 0.2
+      color: 0x728896,
+      roughness: 0.28,
+      metalness: 0.14
     });
 
-    // Ceiling material: Acoustic drop-ceiling tile grid
+    // Ceiling material: Clean off-white acoustic drop-ceiling tiles
     this.ceilingMat = new THREE.MeshStandardMaterial({
-      color: 0x161a20,
-      roughness: 0.9,
-      metalness: 0.05
+      color: 0xa8b4bd,
+      roughness: 0.85,
+      metalness: 0.02
     });
 
     // Prop materials
     this.metalMat = new THREE.MeshStandardMaterial({
-      color: 0x8291a0,
+      color: 0x9cb0c0,
       metalness: 0.75,
-      roughness: 0.35
+      roughness: 0.3
     });
 
     this.darkMetalMat = new THREE.MeshStandardMaterial({
-      color: 0x22262c,
-      metalness: 0.8,
+      color: 0x3a434d,
+      metalness: 0.65,
       roughness: 0.4
     });
 
     this.chromeMat = new THREE.MeshStandardMaterial({
-      color: 0xd8e0e8,
+      color: 0xe0e8f0,
       metalness: 0.95,
-      roughness: 0.15
+      roughness: 0.12
     });
 
     this.glassMat = new THREE.MeshStandardMaterial({
-      color: 0x6699aa,
+      color: 0x77a6ba,
       transparent: true,
       opacity: 0.45,
       roughness: 0.1,
-      metalness: 0.9
+      metalness: 0.85
     });
 
     this.fabricMat = new THREE.MeshStandardMaterial({
-      color: 0xdedede,
-      roughness: 0.85
+      color: 0xedf2f7,
+      roughness: 0.8
     });
 
     this.redPlasticMat = new THREE.MeshStandardMaterial({
-      color: 0xdd2222,
-      roughness: 0.4,
+      color: 0xee2222,
+      roughness: 0.35,
       metalness: 0.1
     });
 
@@ -109,9 +122,42 @@ export class HospitalEnvironment {
     });
 
     this.signMat = new THREE.MeshStandardMaterial({
-      color: 0x0f2942,
-      roughness: 0.5,
-      metalness: 0.3
+      color: 0x1d4163,
+      roughness: 0.4,
+      metalness: 0.2
+    });
+
+    this.curtainMat = new THREE.MeshStandardMaterial({
+      color: 0x4f828a, // Hospital clinical teal fabric
+      roughness: 0.75,
+      metalness: 0.05,
+      side: THREE.DoubleSide
+    });
+
+    this.windowFrameMat = new THREE.MeshStandardMaterial({
+      color: 0x3b4754,
+      roughness: 0.6,
+      metalness: 0.65
+    });
+
+    this.windowGlassMat = new THREE.MeshStandardMaterial({
+      color: 0x447699,
+      roughness: 0.15,
+      metalness: 0.8,
+      transparent: true,
+      opacity: 0.6
+    });
+
+    this.tankMat = new THREE.MeshStandardMaterial({
+      color: 0x30694e, // Medical green oxygen cylinder
+      roughness: 0.35,
+      metalness: 0.5
+    });
+
+    this.crateMat = new THREE.MeshStandardMaterial({
+      color: 0x5d7080,
+      roughness: 0.55,
+      metalness: 0.25
     });
   }
 
@@ -119,6 +165,74 @@ export class HospitalEnvironment {
     this.buildFloorsAndCeilings();
     this.buildWalls();
     this.buildProps();
+
+    // Asynchronously load real 3D GLB assets
+    this.loadCorridorGlb();
+    this.loadBedGlb();
+  }
+
+  private loadCorridorGlb(): void {
+    const url = '/assets/hospital/02_Rooms/Hospital_Corridor/hospital_corridor.glb';
+    this.loader.load(
+      url,
+      (gltf) => {
+        // Instance the modular corridor along the central corridor:
+        // Corridor extends from Z: 5 to Z: 62 (width 6m, height 3.6m)
+        const segmentZPositions = [17.5, 30.5, 43.5, 56.5];
+        for (const z of segmentZPositions) {
+          const inst = SkeletonUtils.clone(gltf.scene);
+          inst.position.set(0, 0, z);
+          inst.traverse((child: any) => {
+            if (child.isMesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+          this.environmentGroup.add(inst);
+        }
+        Logger.info('HospitalEnvironment: Successfully loaded and instanced modular corridor GLB.');
+      },
+      undefined,
+      (err) => {
+        Logger.warn(`HospitalEnvironment: Corridor GLB not loaded (${err}). Using built-in modular architecture.`);
+      }
+    );
+  }
+
+  private loadBedGlb(): void {
+    const url = '/assets/hospital/03_Props/Hospital_Beds/hospital_bed/base_basic_shaded.glb';
+    this.loader.load(
+      url,
+      (gltf) => {
+        this.bedGlbModel = gltf.scene;
+        this.bedGlbModel.traverse((child: any) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+          }
+        });
+        // Upgrade existing procedural bed placeholders with real 3D model
+        for (const placeholder of this.bedPlaceholders) {
+          const isOverturned = placeholder.userData.isOverturned;
+          const clone = SkeletonUtils.clone(this.bedGlbModel);
+          clone.scale.setScalar(1.35);
+          while (placeholder.children.length > 0) {
+            placeholder.remove(placeholder.children[0]);
+          }
+          if (isOverturned) {
+            clone.rotation.z = Math.PI / 2.3;
+            clone.rotation.x = 0.2;
+            clone.position.y = 0.45;
+          }
+          placeholder.add(clone);
+        }
+        Logger.info('HospitalEnvironment: Successfully upgraded hospital beds with real 3D GLB model.');
+      },
+      undefined,
+      (err) => {
+        Logger.warn(`HospitalEnvironment: Bed GLB not loaded (${err}). Using detailed procedural bed model.`);
+      }
+    );
   }
 
   private buildFloorsAndCeilings(): void {
@@ -314,17 +428,39 @@ export class HospitalEnvironment {
         return this.createBloodSplatter();
       case 'wall_sign':
         return this.createWallSign(p.signText ?? 'HOSPITAL WING');
+      case 'curtain':
+        return this.createCurtain();
+      case 'window':
+        return this.createWindow();
+      case 'nightstand':
+        return this.createNightstand();
+      case 'oxygen_tank':
+        return this.createOxygenTank();
+      case 'medicine_crate':
+        return this.createMedicineCrate();
+      case 'cctv_wall_monitor':
+        return this.createCctvWallMonitor();
       default:
         return null;
     }
   }
 
   // =========================================================================
-  // Detailed Procedural Prop Generators
+  // Detailed Procedural Prop Generators & GLB Integrators
   // =========================================================================
 
   private createHospitalBed(): THREE.Group {
     const grp = new THREE.Group();
+    grp.userData.isBed = true;
+    grp.userData.isOverturned = false;
+    this.bedPlaceholders.push(grp);
+
+    if (this.bedGlbModel) {
+      const clone = SkeletonUtils.clone(this.bedGlbModel);
+      clone.scale.setScalar(1.35);
+      grp.add(clone);
+      return grp;
+    }
 
     // Steel Tubular Frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 2.2), this.metalMat);
@@ -359,10 +495,185 @@ export class HospitalEnvironment {
   }
 
   private createOverturnedBed(): THREE.Group {
-    const grp = this.createHospitalBed();
-    grp.rotation.z = Math.PI / 2.3;
-    grp.rotation.x = 0.2;
-    grp.position.y = 0.45;
+    const grp = new THREE.Group();
+    grp.userData.isBed = true;
+    grp.userData.isOverturned = true;
+    this.bedPlaceholders.push(grp);
+
+    if (this.bedGlbModel) {
+      const clone = SkeletonUtils.clone(this.bedGlbModel);
+      clone.scale.setScalar(1.35);
+      clone.rotation.z = Math.PI / 2.3;
+      clone.rotation.x = 0.2;
+      clone.position.y = 0.45;
+      grp.add(clone);
+      return grp;
+    }
+
+    // Overturned procedural bed
+    const bed = new THREE.Group();
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.35, 2.2), this.metalMat);
+    frame.position.y = 0.35;
+    frame.castShadow = true;
+
+    const headboard = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.65, 0.08), this.metalMat);
+    headboard.position.set(0, 0.65, -1.06);
+
+    const footboard = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.45, 0.08), this.metalMat);
+    footboard.position.set(0, 0.55, 1.06);
+
+    const mattress = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.22, 2.1), this.fabricMat);
+    mattress.position.y = 0.55;
+
+    bed.add(frame, headboard, footboard, mattress);
+    bed.rotation.z = Math.PI / 2.3;
+    bed.rotation.x = 0.2;
+    bed.position.y = 0.45;
+
+    grp.add(bed);
+    return grp;
+  }
+
+  private createCurtain(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // Ceiling chrome track rod
+    const track = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.04, 0.04), this.chromeMat);
+    track.position.y = 3.35;
+
+    // Hanging curtain sheets with slight folds
+    const sheetCount = 5;
+    const width = 0.55;
+    for (let i = 0; i < sheetCount; i++) {
+      const sheet = new THREE.Mesh(new THREE.PlaneGeometry(width, 2.7), this.curtainMat);
+      sheet.position.set((i - 2) * (width * 0.95), 1.95, (i % 2 === 0 ? 0.04 : -0.04));
+      sheet.rotation.y = (i % 2 === 0 ? 0.15 : -0.15);
+      sheet.castShadow = true;
+      sheet.receiveShadow = true;
+      grp.add(sheet);
+    }
+
+    grp.add(track);
+    return grp;
+  }
+
+  private createWindow(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // Outer window frame
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 0.12), this.windowFrameMat);
+    frame.castShadow = true;
+
+    // Security grill / bars
+    const barGeo = new THREE.CylinderGeometry(0.016, 0.016, 1.45, 6);
+    for (let x = -0.9; x <= 0.9; x += 0.3) {
+      const bar = new THREE.Mesh(barGeo, this.darkMetalMat);
+      bar.position.set(x, 0, 0.02);
+      grp.add(bar);
+    }
+
+    // Frosted reinforced glass
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 1.45), this.windowGlassMat);
+    glass.position.z = -0.01;
+
+    // Exterior night backdrop with subtle cold dark ambient plane
+    const extBackdrop = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 1.8),
+      new THREE.MeshBasicMaterial({ color: 0x050d18 })
+    );
+    extBackdrop.position.z = -0.1;
+
+    grp.add(frame, glass, extBackdrop);
+    return grp;
+  }
+
+  private createNightstand(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // Nightstand body
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.65, 0.5), this.metalMat);
+    body.position.y = 0.325;
+    body.castShadow = true;
+
+    // Top drawer handle
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.025, 0.03), this.chromeMat);
+    handle.position.set(0, 0.48, 0.26);
+
+    // Bedside water pitcher
+    const carafe = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, 0.18, 8), this.glassMat);
+    carafe.position.set(0.12, 0.74, 0.05);
+
+    grp.add(body, handle, carafe);
+    return grp;
+  }
+
+  private createOxygenTank(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // Main pressurized cylinder
+    const cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 1.25, 12), this.tankMat);
+    cyl.position.y = 0.65;
+    cyl.castShadow = true;
+
+    // Top dome
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), this.tankMat);
+    dome.position.y = 1.275;
+
+    // Brass regulator valve & gauge
+    const valve = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.08), this.metalMat);
+    valve.position.y = 1.45;
+
+    const gauge = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.03, 8), this.chromeMat);
+    gauge.rotation.x = Math.PI / 2;
+    gauge.position.set(0.06, 1.45, 0.04);
+
+    grp.add(cyl, dome, valve, gauge);
+    return grp;
+  }
+
+  private createMedicineCrate(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // Reinforced polymer / metal crate
+    const box = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.45, 0.6), this.crateMat);
+    box.position.y = 0.225;
+    box.castShadow = true;
+
+    // Corner braces
+    const cornerMat = this.darkMetalMat;
+    const corner1 = new THREE.Mesh(new THREE.BoxGeometry(0.87, 0.06, 0.62), cornerMat);
+    corner1.position.y = 0.225;
+
+    // Red medical cross on top
+    const cross1 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.01, 0.06), this.redPlasticMat);
+    cross1.position.set(0, 0.455, 0);
+    const cross2 = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.01, 0.24), this.redPlasticMat);
+    cross2.position.set(0, 0.455, 0);
+
+    grp.add(box, corner1, cross1, cross2);
+    return grp;
+  }
+
+  private createCctvWallMonitor(): THREE.Group {
+    const grp = new THREE.Group();
+
+    // 2x2 Array of surveillance monitors
+    const frameMat = this.darkMetalMat;
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 2; col++) {
+        const x = (col - 0.5) * 0.55;
+        const y = (row - 0.5) * 0.42;
+
+        const casing = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.38, 0.15), frameMat);
+        casing.position.set(x, y, 0);
+
+        const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.32), this.screenCctvMat);
+        screen.position.set(x, y, 0.08);
+
+        grp.add(casing, screen);
+      }
+    }
+
     return grp;
   }
 
@@ -471,7 +782,7 @@ export class HospitalEnvironment {
     const grp = new THREE.Group();
 
     // Main U-shaped or curved reception counter
-    const counterMat = new THREE.MeshStandardMaterial({ color: 0x3d4b59, roughness: 0.5, metalness: 0.2 });
+    const counterMat = new THREE.MeshStandardMaterial({ color: 0x5a6c7d, roughness: 0.45, metalness: 0.2 });
     const desk = new THREE.Mesh(new THREE.BoxGeometry(4.0, 1.15, 1.4), counterMat);
     desk.position.y = 0.575;
     desk.castShadow = true;
@@ -650,6 +961,8 @@ export class HospitalEnvironment {
   }
 
   public dispose(): void {
+    this.bedPlaceholders = [];
+    this.bedGlbModel = null;
     for (const c of this.colliders) {
       if (c && c.body) {
         this.physicsWorld.removeRigidBody(c.body);

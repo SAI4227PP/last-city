@@ -32,10 +32,11 @@ export class ParticleSystem {
     this.geometry.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
 
     const material = new THREE.PointsMaterial({
-      size: 0.15,
+      size: 0.22,
+      map: ParticleSystem.createCircleTexture(),
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.95,
       blending: THREE.NormalBlending,
       depthWrite: false
     });
@@ -44,26 +45,98 @@ export class ParticleSystem {
     scene.add(this.points);
   }
 
-  public spawnBloodSplatter(origin: THREE.Vector3, count: number = 20): void {
+  private static createCircleTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 32;
+    canvas.height = 32;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      const gradient = ctx.createRadialGradient(16, 16, 0, 16, 16, 16);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      gradient.addColorStop(0.55, 'rgba(255, 255, 255, 0.85)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 32, 32);
+    }
+    const texture = new THREE.CanvasTexture(canvas);
+    return texture;
+  }
+
+  public spawnBloodSplatter(
+    origin: THREE.Vector3,
+    count: number = 20,
+    normalDir?: THREE.Vector3,
+    isHeadshot: boolean = false
+  ): void {
     const scale = PerformanceManager.getInstance().getConfig().particleScale;
-    const finalCount = Math.max(2, Math.round(count * scale));
-    const bloodColor = new THREE.Color(0x8a0f0f);
+    const finalCount = Math.max(3, Math.round(count * (isHeadshot ? 1.6 : 1.0) * scale));
+
     for (let i = 0; i < finalCount; i++) {
       if (this.particles.length >= this.maxParticles) break;
 
-      const vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 4,
-        Math.random() * 3 + 1,
-        (Math.random() - 0.5) * 4
-      );
+      // Arterial blood colors: deep visceral crimson to bright arterial red
+      const shade = Math.random();
+      const bloodColor = shade > 0.6
+        ? new THREE.Color(0xd61818) // Vibrant arterial crimson
+        : shade > 0.25
+        ? new THREE.Color(0x990c0c) // Deep crimson
+        : new THREE.Color(0x610505); // Dark venous clot
+
+      // Directional velocity with cone dispersion
+      const vel = new THREE.Vector3();
+      if (normalDir) {
+        vel.copy(normalDir).multiplyScalar(Math.random() * 3.5 + 1.5);
+        vel.x += (Math.random() - 0.5) * 2.5;
+        vel.y += Math.random() * 2.8 + (isHeadshot ? 1.8 : 0.6);
+        vel.z += (Math.random() - 0.5) * 2.5;
+      } else {
+        vel.set(
+          (Math.random() - 0.5) * 4,
+          Math.random() * (isHeadshot ? 4.5 : 3.0) + 1.2,
+          (Math.random() - 0.5) * 4
+        );
+      }
 
       this.particles.push({
         position: origin.clone(),
         velocity: vel,
         color: bloodColor,
-        size: Math.random() * 0.18 + 0.08,
+        size: (Math.random() * 0.22 + 0.1) * (isHeadshot ? 1.4 : 1.0),
         life: 0,
-        maxLife: Math.random() * 0.4 + 0.3
+        maxLife: Math.random() * 0.45 + 0.35
+      });
+    }
+  }
+
+  public spawnImpactSparks(origin: THREE.Vector3, normalDir?: THREE.Vector3, count: number = 8): void {
+    const scale = PerformanceManager.getInstance().getConfig().particleScale;
+    const finalCount = Math.max(2, Math.round(count * scale));
+    const sparkColor = new THREE.Color(0xffaa33);
+
+    for (let i = 0; i < finalCount; i++) {
+      if (this.particles.length >= this.maxParticles) break;
+
+      const vel = new THREE.Vector3();
+      if (normalDir) {
+        vel.copy(normalDir).multiplyScalar(Math.random() * 3.0 + 1.0);
+        vel.x += (Math.random() - 0.5) * 2.0;
+        vel.y += Math.random() * 2.0 + 0.5;
+        vel.z += (Math.random() - 0.5) * 2.0;
+      } else {
+        vel.set(
+          (Math.random() - 0.5) * 3,
+          Math.random() * 3 + 1,
+          (Math.random() - 0.5) * 3
+        );
+      }
+
+      this.particles.push({
+        position: origin.clone(),
+        velocity: vel,
+        color: sparkColor,
+        size: Math.random() * 0.12 + 0.05,
+        life: 0,
+        maxLife: Math.random() * 0.35 + 0.2
       });
     }
   }

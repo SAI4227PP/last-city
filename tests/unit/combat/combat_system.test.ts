@@ -291,4 +291,71 @@ describe('Zombie Health, Weapon Damage and Combat System Audit', () => {
 
     unsub();
   });
+
+  // N. Zombie-to-player damage pipeline
+  it('N. decreases player HP and emits player:damage when a zombie attacks', () => {
+    const walker = zombieManager.spawnZombie('walker', new THREE.Vector3(0, 0, 1.2))!;
+    const playerPos = new THREE.Vector3(0, 0, 0);
+
+    expect(survival.getVitals().health).toBe(100);
+
+    let damageEventFired = false;
+    let damageAmountReceived = 0;
+    const unsub = eventBus.on('player:damage', (e) => {
+      damageEventFired = true;
+      damageAmountReceived = e.amount;
+    });
+
+    // Zombie updates in melee attack range with clear line of sight
+    walker.state = 'attack';
+    (walker as any).attackCooldownTimer = 0;
+
+    zombieManager.update(0.016, playerPos, undefined, false);
+
+    expect(damageEventFired).toBe(true);
+    expect(damageAmountReceived).toBe(15); // Walker attack damage is 15
+    expect(survival.getVitals().health).toBe(85);
+
+    unsub();
+  });
+
+  // O. Multiple attacks reduce player HP to zero and trigger death
+  it('O. reduces player HP to zero across multiple attacks and triggers death', () => {
+    const brute = zombieManager.spawnZombie('brute', new THREE.Vector3(0, 0, 1.2))!; // 35 damage per hit
+    const playerPos = new THREE.Vector3(0, 0, 0);
+
+    let deathEventFired = false;
+    const unsub = eventBus.on('player:death', () => {
+      deathEventFired = true;
+    });
+
+    // 1st hit: 100 -> 65
+    brute.state = 'attack';
+    (brute as any).attackCooldownTimer = 0;
+    zombieManager.update(0.016, playerPos, undefined, false);
+    expect(survival.getVitals().health).toBe(65);
+
+    // 2nd hit: 65 -> 30
+    (brute as any).attackCooldownTimer = 0;
+    (brute as any).hasDealtAttackDamage = false;
+    (survival as any).damageCooldownTimer = 0;
+    zombieManager.update(0.016, playerPos, undefined, false);
+    expect(survival.getVitals().health).toBe(30);
+
+    // 3rd hit: 30 -> 0 (death!)
+    (brute as any).attackCooldownTimer = 0;
+    (brute as any).hasDealtAttackDamage = false;
+    (survival as any).damageCooldownTimer = 0;
+    zombieManager.update(0.016, playerPos, undefined, false);
+    expect(survival.getVitals().health).toBe(0);
+    expect(deathEventFired).toBe(true);
+
+    // Post-death: dead player cannot be further damaged below 0
+    (brute as any).attackCooldownTimer = 0;
+    (brute as any).hasDealtAttackDamage = false;
+    zombieManager.update(0.016, playerPos, undefined, true);
+    expect(survival.getVitals().health).toBe(0);
+
+    unsub();
+  });
 });

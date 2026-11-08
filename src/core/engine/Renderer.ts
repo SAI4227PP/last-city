@@ -26,7 +26,7 @@ export class Renderer {
 
     this.webglRenderer.outputColorSpace = THREE.SRGBColorSpace;
     this.webglRenderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.webglRenderer.toneMappingExposure = 1.1;
+    this.webglRenderer.toneMappingExposure = 1.45;
 
     // Apply shadow settings based on performance profile
     this.webglRenderer.shadowMap.enabled = this.currentConfig.shadows;

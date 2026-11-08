@@ -148,6 +148,106 @@ export class PhysicsWorld {
     return null;
   }
 
+  /**
+   * Casts a sphere / multi-ray collision bundle to find the nearest unobstructed camera distance.
+   * Tests against walls, floors, ceilings, and furniture while excluding the player's own collider.
+   */
+  public cameraCollisionQuery(
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+    maxDistance: number,
+    sphereRadius: number = 0.20,
+    excludeBody?: RAPIER.RigidBody,
+    excludeCollider?: RAPIER.Collider
+  ): number {
+    if (!this.world) return maxDistance;
+
+    let nearestDistance = maxDistance;
+
+    // 1. Center ray
+    const centerRay = new RAPIER.Ray(
+      new RAPIER.Vector3(origin.x, origin.y, origin.z),
+      new RAPIER.Vector3(direction.x, direction.y, direction.z)
+    );
+    const centerHit = this.world.castRay(
+      centerRay,
+      maxDistance,
+      true,
+      undefined,
+      undefined,
+      excludeCollider,
+      excludeBody
+    );
+    if (centerHit && centerHit.timeOfImpact < nearestDistance) {
+      nearestDistance = centerHit.timeOfImpact;
+    }
+
+    // 2. 4-point perimeter sphere-approximation rays (Top, Bottom, Left, Right)
+    const up = Math.abs(direction.y) > 0.95 ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+    const right = new THREE.Vector3().crossVectors(direction, up).normalize().multiplyScalar(sphereRadius);
+    const orthoUp = new THREE.Vector3().crossVectors(right, direction).normalize().multiplyScalar(sphereRadius);
+
+    const perimeterOffsets = [right, right.clone().negate(), orthoUp, orthoUp.clone().negate()];
+
+    for (const offset of perimeterOffsets) {
+      const rayOrigin = new RAPIER.Vector3(origin.x + offset.x, origin.y + offset.y, origin.z + offset.z);
+      const ray = new RAPIER.Ray(
+        rayOrigin,
+        new RAPIER.Vector3(direction.x, direction.y, direction.z)
+      );
+      const hit = this.world.castRay(
+        ray,
+        maxDistance,
+        true,
+        undefined,
+        undefined,
+        excludeCollider,
+        excludeBody
+      );
+      if (hit && hit.timeOfImpact < nearestDistance) {
+        nearestDistance = hit.timeOfImpact;
+      }
+    }
+
+    // 3. Rapier castShape with Ball geometry if available
+    try {
+      if (this.rapier && (this.world as any).castShape) {
+        const ball = new this.rapier.Ball(sphereRadius);
+        const shapePos = new this.rapier.Vector3(origin.x, origin.y, origin.z);
+        const shapeRot = new this.rapier.Quaternion(0, 0, 0, 1);
+        const shapeVel = new this.rapier.Vector3(direction.x * maxDistance, direction.y * maxDistance, direction.z * maxDistance);
+        const shapeHit = (this.world as any).castShape(
+          shapePos,
+          shapeRot,
+          shapeVel,
+          ball,
+          maxDistance,
+          1.0,
+          true,
+          undefined,
+          undefined,
+          excludeCollider,
+          excludeBody
+        );
+        if (shapeHit && shapeHit.time_of_impact !== undefined) {
+          const hitDist = shapeHit.time_of_impact * maxDistance;
+          if (hitDist < nearestDistance) {
+            nearestDistance = hitDist;
+          }
+        }
+      }
+    } catch (_) {
+      // Fallback already covered by 5-ray multi-sample bundle
+    }
+
+    if (nearestDistance >= maxDistance) {
+      return maxDistance;
+    }
+
+    // Leave safety clearance buffer from wall surface, clamped to keep camera outside player
+    return Math.max(0.55, nearestDistance - 0.12);
+  }
+
   public getBodyCount(): number {
     return this.rigidBodies.size;
   }
